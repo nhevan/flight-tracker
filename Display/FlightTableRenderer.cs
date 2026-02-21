@@ -44,7 +44,7 @@ public static class FlightTableRenderer
             .AddColumn(new TableColumn("[bold]Aircraft[/]").Centered())
             .AddColumn(new TableColumn("[bold]Category[/]"))
             .AddColumn(new TableColumn("[bold]Alt (m)[/]").RightAligned())
-            .AddColumn(new TableColumn("[bold]Speed (m/s)[/]").RightAligned())
+            .AddColumn(new TableColumn("[bold]Speed (km/h)[/]").RightAligned())
             .AddColumn(new TableColumn("[bold]Heading[/]").RightAligned())
             .AddColumn(new TableColumn("[bold]V/Rate (m/s)[/]").RightAligned());
 
@@ -62,7 +62,7 @@ public static class FlightTableRenderer
                 : "[grey]--[/]";
 
             string speed = f.VelocityMetersPerSecond.HasValue
-                ? f.VelocityMetersPerSecond.Value.ToString("F1", CultureInfo.InvariantCulture)
+                ? (f.VelocityMetersPerSecond.Value * 3.6).ToString("F0", CultureInfo.InvariantCulture)
                 : "[grey]--[/]";
 
             string heading = f.HeadingDegrees.HasValue
