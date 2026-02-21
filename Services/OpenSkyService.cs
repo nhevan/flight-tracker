@@ -104,9 +104,14 @@ public sealed class OpenSkyService : IFlightService
         if (raw?.States is null)
             return (Array.Empty<FlightState>(), false);
 
+        var loc = _settings.HomeLocation;
+        double rangeKm = loc.VisualRangeKm;
+
         var flights = raw.States
-            .Select(MapToFlightState)
+            .Select(s => MapToFlightState(s, loc.Latitude, loc.Longitude))
             .OfType<FlightState>()
+            // Filter by visual range when VisualRangeKm > 0 and position is known
+            .Where(f => rangeKm <= 0 || f.DistanceKm is null || f.DistanceKm <= rangeKm)
             .ToList()
             .AsReadOnly();
 
@@ -178,22 +183,30 @@ public sealed class OpenSkyService : IFlightService
     // [9]  velocity        float | null
     // [10] true_track      float | null  (heading, degrees clockwise from North)
     // [11] vertical_rate   float | null
-    private static FlightState? MapToFlightState(JsonElement[] state)
+    private static FlightState? MapToFlightState(JsonElement[] state, double homeLat, double homeLon)
     {
         if (state.Length < 11) return null;
+
+        double? lon = GetDouble(state, 5);
+        double? lat = GetDouble(state, 6);
+
+        double? distanceKm = (lat.HasValue && lon.HasValue)
+            ? Haversine.DistanceKm(homeLat, homeLon, lat.Value, lon.Value)
+            : null;
 
         return new FlightState
         {
             Icao24                      = GetString(state, 0) ?? string.Empty,
             Callsign                    = (GetString(state, 1) ?? "N/A").Trim(),
             OriginCountry               = GetString(state, 2) ?? "Unknown",
-            Longitude                   = GetDouble(state, 5),
-            Latitude                    = GetDouble(state, 6),
+            Longitude                   = lon,
+            Latitude                    = lat,
             BarometricAltitudeMeters    = GetDouble(state, 7),
             OnGround                    = GetBool(state, 8),
             VelocityMetersPerSecond     = GetDouble(state, 9),
             HeadingDegrees              = GetDouble(state, 10),
             VerticalRateMetersPerSecond = GetDouble(state, 11),
+            DistanceKm                  = distanceKm,
         };
     }
 

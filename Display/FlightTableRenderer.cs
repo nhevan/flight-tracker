@@ -10,13 +10,19 @@ public static class FlightTableRenderer
         IReadOnlyList<FlightState> flights,
         double homeLat,
         double homeLon,
+        double visualRangeKm,
         DateTimeOffset timestamp)
     {
         AnsiConsole.Clear();
 
+        string rangeLabel = visualRangeKm > 0
+            ? string.Create(CultureInfo.InvariantCulture, $"Range: [magenta]{visualRangeKm:F0} km[/]  ")
+            : string.Empty;
+
         AnsiConsole.MarkupLine(string.Create(CultureInfo.InvariantCulture,
             $"[bold cyan]Flight Tracker[/]  " +
             $"Home: [yellow]{homeLat:F4}, {homeLon:F4}[/]  " +
+            $"{rangeLabel}" +
             $"Last poll: [green]{timestamp:HH:mm:ss}[/]  " +
             $"Overhead: [white]{flights.Count}[/]"));
 
@@ -24,12 +30,13 @@ public static class FlightTableRenderer
 
         if (flights.Count == 0)
         {
-            AnsiConsole.MarkupLine("[grey]No flights detected in bounding box.[/]");
+            AnsiConsole.MarkupLine("[grey]No flights detected in visual range.[/]");
             return;
         }
 
         var table = new Table()
             .Border(TableBorder.Rounded)
+            .AddColumn(new TableColumn("[bold]Dist (km)[/]").RightAligned())
             .AddColumn(new TableColumn("[bold]Callsign[/]").Centered())
             .AddColumn(new TableColumn("[bold]ICAO24[/]").Centered())
             .AddColumn(new TableColumn("[bold]Country[/]"))
@@ -39,9 +46,14 @@ public static class FlightTableRenderer
             .AddColumn(new TableColumn("[bold]V/Rate (m/s)[/]").RightAligned())
             .AddColumn(new TableColumn("[bold]On Ground[/]").Centered());
 
-        foreach (var f in flights.OrderBy(f => f.Callsign))
+        // Sort by distance (closest first); flights with unknown position go last
+        foreach (var f in flights.OrderBy(f => f.DistanceKm ?? double.MaxValue))
         {
             string onGround = f.OnGround ? "[yellow]Yes[/]" : "[green]No[/]";
+
+            string distance = f.DistanceKm.HasValue
+                ? f.DistanceKm.Value.ToString("F1", CultureInfo.InvariantCulture)
+                : "[grey]--[/]";
 
             string altitude = f.BarometricAltitudeMeters.HasValue
                 ? f.BarometricAltitudeMeters.Value.ToString("F0", CultureInfo.InvariantCulture)
@@ -62,6 +74,7 @@ public static class FlightTableRenderer
                 : "[grey]--[/]";
 
             table.AddRow(
+                distance,
                 $"[cyan]{Markup.Escape(f.Callsign)}[/]",
                 Markup.Escape(f.Icao24),
                 Markup.Escape(f.OriginCountry),

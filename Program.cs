@@ -60,6 +60,7 @@ while (!cts.Token.IsCancellationRequested)
             flights,
             settings.HomeLocation.Latitude,
             settings.HomeLocation.Longitude,
+            settings.HomeLocation.VisualRangeKm,
             DateTimeOffset.Now);
     }
     catch (OperationCanceledException)
