@@ -54,12 +54,27 @@ Console.WriteLine();
 
 TimeSpan pollInterval = TimeSpan.FromSeconds(settings.Polling.IntervalSeconds);
 
+// Tracks ICAO24s seen on the previous poll to detect newly-entering flights
+var previousIcaos = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
 while (!cts.Token.IsCancellationRequested)
 {
     try
     {
         var flights  = await flightService.GetOverheadFlightsAsync(cts.Token);
         var enriched = await enrichmentService.EnrichAsync(flights, cts.Token);
+
+        // Emit one ASCII BEL per new flight (skipped on first poll so startup is silent)
+        if (previousIcaos.Count > 0)
+        {
+            foreach (var ef in enriched)
+            {
+                if (!previousIcaos.Contains(ef.State.Icao24))
+                    Console.Write('\a'); // terminal audible/visual alert
+            }
+        }
+        previousIcaos = enriched.Select(ef => ef.State.Icao24)
+                                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         FlightTableRenderer.Render(
             enriched,
