@@ -79,13 +79,27 @@ public sealed class FlightRouteService : IFlightRouteService
                 return null;
             }
 
+            double? oLat = detail.Origin?.Latitude;
+            double? oLon = detail.Origin?.Longitude;
+            double? dLat = detail.Destination?.Latitude;
+            double? dLon = detail.Destination?.Longitude;
+
+            double? routeDistKm = (oLat, oLon, dLat, dLon) is (double olat, double olon, double dlat, double dlon)
+                ? Haversine.DistanceKm(olat, olon, dlat, dlon)
+                : null;
+
             var route = new FlightRoute(
-                OriginIcao: NullIfEmpty(detail.Origin?.IcaoCode),
-                OriginIata: NullIfEmpty(detail.Origin?.IataCode),
-                OriginName: NullIfEmpty(detail.Origin?.Name),
-                DestIcao:   NullIfEmpty(detail.Destination?.IcaoCode),
-                DestIata:   NullIfEmpty(detail.Destination?.IataCode),
-                DestName:   NullIfEmpty(detail.Destination?.Name)
+                OriginIcao:      NullIfEmpty(detail.Origin?.IcaoCode),
+                OriginIata:      NullIfEmpty(detail.Origin?.IataCode),
+                OriginName:      NullIfEmpty(detail.Origin?.Name),
+                OriginLat:       oLat,
+                OriginLon:       oLon,
+                DestIcao:        NullIfEmpty(detail.Destination?.IcaoCode),
+                DestIata:        NullIfEmpty(detail.Destination?.IataCode),
+                DestName:        NullIfEmpty(detail.Destination?.Name),
+                DestLat:         dLat,
+                DestLon:         dLon,
+                RouteDistanceKm: routeDistKm
             );
 
             _cache[callsign] = route;

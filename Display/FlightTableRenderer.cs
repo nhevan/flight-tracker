@@ -46,7 +46,8 @@ public static class FlightTableRenderer
             .AddColumn(new TableColumn("[bold]Alt (m)[/]").RightAligned())
             .AddColumn(new TableColumn("[bold]Speed (km/h)[/]").RightAligned())
             .AddColumn(new TableColumn("[bold]Heading[/]").RightAligned())
-            .AddColumn(new TableColumn("[bold]V/Rate (m/s)[/]").RightAligned());
+            .AddColumn(new TableColumn("[bold]V/Rate (m/s)[/]").RightAligned())
+            .AddColumn(new TableColumn("[bold]ETE[/]").RightAligned());
 
         // Sort by distance (closest first); flights with unknown position go last
         foreach (var ef in flights.OrderBy(ef => ef.State.DistanceKm ?? double.MaxValue))
@@ -86,7 +87,8 @@ public static class FlightTableRenderer
                 altitude,
                 speed,
                 heading,
-                vrate);
+                vrate,
+                FormatEte(ef.Route, f.VelocityMetersPerSecond));
         }
 
         AnsiConsole.Write(table);
@@ -135,6 +137,23 @@ public static class FlightTableRenderer
             "Military"       => $"[red]{Markup.Escape(info.Category)}[/]",
             _                => Markup.Escape(info.Category)
         };
+    }
+
+    /// <summary>
+    /// Estimates total flight time from route great-circle distance and current ground speed.
+    /// This is an approximation: straight-line distance, not the actual filed route.
+    /// </summary>
+    private static string FormatEte(FlightRoute? route, double? speedMs)
+    {
+        if (route?.RouteDistanceKm is not double distKm || speedMs is not double speed || speed <= 0)
+            return "[grey]---[/]";
+
+        double hours = distKm / (speed * 3.6);
+        int h = (int)hours;
+        int m = (int)((hours - h) * 60);
+        return h > 0
+            ? $"{h}h {m:D2}m"
+            : $"{m}m";
     }
 
     // Maps a bearing (0–360°) to an 8-point cardinal direction abbreviation

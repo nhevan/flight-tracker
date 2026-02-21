@@ -92,6 +92,12 @@ internal sealed class AdsbdbAirport
 
     [System.Text.Json.Serialization.JsonPropertyName("municipality")]
     public string? Municipality { get; set; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("latitude")]
+    public double? Latitude { get; set; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("longitude")]
+    public double? Longitude { get; set; }
 }
 
 // Internal: root response from hexdb.io /api/v1/aircraft/{hex}
