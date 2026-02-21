@@ -5,6 +5,7 @@ public sealed class AppSettings
     public HomeLocationSettings HomeLocation { get; set; } = new();
     public PollingSettings Polling { get; set; } = new();
     public OpenSkySettings OpenSky { get; set; } = new();
+    public TelegramSettings Telegram { get; set; } = new();
 }
 
 public sealed class HomeLocationSettings
@@ -33,4 +34,19 @@ public sealed class OpenSkySettings
     public string BaseUrl { get; set; } = "https://opensky-network.org/api/";
     public string TokenUrl { get; set; } =
         "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token";
+}
+
+public sealed class TelegramSettings
+{
+    /// <summary>Set to true to enable Telegram notifications.</summary>
+    public bool Enabled { get; set; } = false;
+
+    /// <summary>Bot token from @BotFather (e.g. "123456:ABC-DEF...").</summary>
+    public string BotToken { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Your personal chat ID. Get it by sending a message to your bot then calling
+    /// https://api.telegram.org/bot{TOKEN}/getUpdates and reading update.message.chat.id
+    /// </summary>
+    public string ChatId { get; set; } = string.Empty;
 }

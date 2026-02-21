@@ -1,5 +1,6 @@
 using FlightTracker.Configuration;
 using FlightTracker.Display;
+using FlightTracker.Helpers;
 using FlightTracker.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -33,10 +34,12 @@ services.AddSingleton<IFlightService, OpenSkyService>();
 services.AddSingleton<IFlightRouteService, FlightRouteService>();
 services.AddSingleton<IAircraftInfoService, HexDbService>();
 services.AddSingleton<IFlightEnrichmentService, FlightEnrichmentService>();
+services.AddSingleton<ITelegramNotificationService, TelegramNotificationService>();
 await using ServiceProvider provider = services.BuildServiceProvider();
 
 var flightService     = provider.GetRequiredService<IFlightService>();
 var enrichmentService = provider.GetRequiredService<IFlightEnrichmentService>();
+var telegramService   = provider.GetRequiredService<ITelegramNotificationService>();
 
 // ── Graceful shutdown (Ctrl+C) ────────────────────────────────────────────────
 using var cts = new CancellationTokenSource();
@@ -64,13 +67,27 @@ while (!cts.Token.IsCancellationRequested)
         var flights  = await flightService.GetOverheadFlightsAsync(cts.Token);
         var enriched = await enrichmentService.EnrichAsync(flights, cts.Token);
 
-        // Emit one ASCII BEL per new flight (skipped on first poll so startup is silent)
+        // Handle new flights (skipped on first poll so startup is silent)
         if (previousIcaos.Count > 0)
         {
+            double homeLat = settings.HomeLocation.Latitude;
+            double homeLon = settings.HomeLocation.Longitude;
+
             foreach (var ef in enriched)
             {
                 if (!previousIcaos.Contains(ef.State.Icao24))
-                    Console.Write('\a'); // terminal audible/visual alert
+                {
+                    Console.Write('\a'); // audible alert for every new flight
+
+                    // Telegram notification only for Overhead or Towards flights
+                    var f = ef.State;
+                    string? dir = FlightDirectionHelper.Classify(
+                        f.Latitude, f.Longitude, f.HeadingDegrees, f.DistanceKm,
+                        homeLat, homeLon);
+
+                    if (dir is "Overhead" or "Towards")
+                        await telegramService.NotifyAsync(ef, dir, cts.Token);
+                }
             }
         }
         previousIcaos = enriched.Select(ef => ef.State.Icao24)

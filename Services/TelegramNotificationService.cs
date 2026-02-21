@@ -1,0 +1,121 @@
+namespace FlightTracker.Services;
+
+using System.Globalization;
+using System.Net.Http.Json;
+using FlightTracker.Configuration;
+using FlightTracker.Models;
+
+/// <summary>
+/// Sends a Telegram message via the Bot API when a flight is Overhead or Towards home.
+/// Uses a plain HttpClient — no third-party Telegram SDK required.
+/// </summary>
+public sealed class TelegramNotificationService : ITelegramNotificationService
+{
+    private readonly TelegramSettings _settings;
+    private readonly HttpClient _httpClient;
+
+    public TelegramNotificationService(AppSettings settings, IHttpClientFactory httpClientFactory)
+    {
+        _settings = settings.Telegram;
+        _httpClient = httpClientFactory.CreateClient("telegram");
+        _httpClient.Timeout = TimeSpan.FromSeconds(10);
+    }
+
+    public async Task NotifyAsync(
+        EnrichedFlightState flight,
+        string direction,
+        CancellationToken cancellationToken)
+    {
+        if (!_settings.Enabled
+            || string.IsNullOrEmpty(_settings.BotToken)
+            || string.IsNullOrEmpty(_settings.ChatId))
+            return;
+
+        try
+        {
+            string text = BuildMessage(flight, direction);
+
+            string url = $"https://api.telegram.org/bot{_settings.BotToken}/sendMessage";
+
+            var payload = new
+            {
+                chat_id = _settings.ChatId,
+                text,
+                parse_mode = "HTML"
+            };
+
+            using var response = await _httpClient.PostAsJsonAsync(url, payload, cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                string body = await response.Content.ReadAsStringAsync(cancellationToken);
+                Console.WriteLine($"[Telegram] Warning: {(int)response.StatusCode} — {body}");
+            }
+        }
+        catch (Exception ex)
+        {
+            // Notification failure must never crash the tracker
+            Console.WriteLine($"[Telegram] Error: {ex.Message}");
+        }
+    }
+
+    private static string BuildMessage(EnrichedFlightState ef, string direction)
+    {
+        var f = ef.State;
+
+        string dirEmoji = direction switch
+        {
+            "Overhead" => "🔴",
+            "Towards"  => "🟢",
+            _          => "🔵"
+        };
+
+        string callsign = string.IsNullOrWhiteSpace(f.Callsign) || f.Callsign == "N/A"
+            ? f.Icao24
+            : f.Callsign.Trim();
+
+        // Route: "JNB → AMS" or "Unknown route"
+        string route = (ef.Route?.OriginIata ?? ef.Route?.OriginIcao, ef.Route?.DestIata ?? ef.Route?.DestIcao) switch
+        {
+            (string dep, string arr) => $"{dep} → {arr}",
+            _                        => "Unknown route"
+        };
+
+        // Aircraft: "B789 / PH-BHO (Wide-body Jet)" or just type/reg if partial
+        string aircraft = BuildAircraftString(ef.Aircraft);
+
+        string dist    = f.DistanceKm.HasValue
+            ? f.DistanceKm.Value.ToString("F1", CultureInfo.InvariantCulture) + " km"
+            : "?";
+        string alt     = f.BarometricAltitudeMeters.HasValue
+            ? f.BarometricAltitudeMeters.Value.ToString("F0", CultureInfo.InvariantCulture) + " m"
+            : "?";
+        string speed   = f.VelocityMetersPerSecond.HasValue
+            ? (f.VelocityMetersPerSecond.Value * 3.6).ToString("F0", CultureInfo.InvariantCulture) + " km/h"
+            : "?";
+
+        return $"{dirEmoji} <b>{EscapeHtml(callsign)}</b> — {direction}\n" +
+               $"Route: {EscapeHtml(route)}\n" +
+               $"Aircraft: {EscapeHtml(aircraft)}\n" +
+               $"Distance: {dist} | Alt: {alt} | Speed: {speed}";
+    }
+
+    private static string BuildAircraftString(AircraftInfo? info)
+    {
+        if (info is null) return "Unknown";
+
+        var parts = new List<string>(3);
+        if (!string.IsNullOrEmpty(info.TypeCode))     parts.Add(info.TypeCode);
+        if (!string.IsNullOrEmpty(info.Registration)) parts.Add(info.Registration);
+
+        string main = parts.Count > 0 ? string.Join(" / ", parts) : "Unknown";
+
+        return !string.IsNullOrEmpty(info.Category)
+            ? $"{main} ({info.Category})"
+            : main;
+    }
+
+    // Escape characters that have special meaning in Telegram HTML parse mode
+    private static string EscapeHtml(string s) =>
+        s.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;");
+}

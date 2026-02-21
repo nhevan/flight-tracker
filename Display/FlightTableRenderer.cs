@@ -1,6 +1,7 @@
 namespace FlightTracker.Display;
 
 using System.Globalization;
+using FlightTracker.Helpers;
 using FlightTracker.Models;
 using Spectre.Console;
 
@@ -159,41 +160,22 @@ public static class FlightTableRenderer
     }
 
     /// <summary>
-    /// Classifies the flight's direction relative to home using the angular difference
-    /// between the flight's heading and the bearing from the flight to home.
+    /// Formats the flight's direction relative to home with ANSI colour markup.
+    /// Classification is delegated to FlightDirectionHelper.Classify().
     /// </summary>
     private static string FormatDirection(
         double? lat, double? lon, double? heading, double? distKm,
         double homeLat, double homeLon)
     {
-        // Within 5 km — essentially directly overhead regardless of heading
-        if (distKm is <= 5.0)
-            return "[bold white]⊙ Overhead[/]";
-
-        if (lat is null || lon is null || heading is null)
-            return "[grey]---[/]";
-
-        // Bearing from flight position → home (degrees clockwise from north)
-        double dLon  = ToRad(homeLon - lon.Value);
-        double fLat  = ToRad(lat.Value);
-        double hLat  = ToRad(homeLat);
-        double y     = Math.Sin(dLon) * Math.Cos(hLat);
-        double x     = Math.Cos(fLat) * Math.Sin(hLat) - Math.Sin(fLat) * Math.Cos(hLat) * Math.Cos(dLon);
-        double bearingToHome = (Math.Atan2(y, x) * 180.0 / Math.PI + 360.0) % 360.0;
-
-        // Angular difference folded to [0°, 180°]
-        double diff = Math.Abs((heading.Value - bearingToHome + 360.0) % 360.0);
-        if (diff > 180.0) diff = 360.0 - diff;
-
-        return diff switch
+        return FlightDirectionHelper.Classify(lat, lon, heading, distKm, homeLat, homeLon) switch
         {
-            <= 30  => "[green]↓ Towards[/]",
-            >= 150 => "[red]↑ Away[/]",
-            _      => "[yellow]→ Crossing[/]"
+            "Overhead" => "[bold white]⊙ Overhead[/]",
+            "Towards"  => "[green]↓ Towards[/]",
+            "Away"     => "[red]↑ Away[/]",
+            "Crossing" => "[yellow]→ Crossing[/]",
+            _          => "[grey]---[/]"
         };
     }
-
-    private static double ToRad(double deg) => deg * Math.PI / 180.0;
 
     // Maps a bearing (0–360°) to an 8-point cardinal direction abbreviation
     private static string CardinalDirection(double degrees) => degrees switch
