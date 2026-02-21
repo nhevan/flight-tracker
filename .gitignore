@@ -12,3 +12,6 @@ appsettings.*.json
 .vs/
 *.user
 .vscode/
+
+# Claude
+.claude/
