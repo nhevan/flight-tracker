@@ -46,6 +46,7 @@ public static class FlightTableRenderer
             .AddColumn(new TableColumn("[bold]Alt (m)[/]").RightAligned())
             .AddColumn(new TableColumn("[bold]Speed (km/h)[/]").RightAligned())
             .AddColumn(new TableColumn("[bold]Heading[/]").RightAligned())
+            .AddColumn(new TableColumn("[bold]Direction[/]").Centered())
             .AddColumn(new TableColumn("[bold]V/Rate (m/s)[/]").RightAligned())
             .AddColumn(new TableColumn("[bold]ETE[/]").RightAligned());
 
@@ -87,6 +88,7 @@ public static class FlightTableRenderer
                 altitude,
                 speed,
                 heading,
+                FormatDirection(f.Latitude, f.Longitude, f.HeadingDegrees, f.DistanceKm, homeLat, homeLon),
                 vrate,
                 FormatEte(ef.Route, f.VelocityMetersPerSecond));
         }
@@ -155,6 +157,43 @@ public static class FlightTableRenderer
             ? $"{h}h {m:D2}m"
             : $"{m}m";
     }
+
+    /// <summary>
+    /// Classifies the flight's direction relative to home using the angular difference
+    /// between the flight's heading and the bearing from the flight to home.
+    /// </summary>
+    private static string FormatDirection(
+        double? lat, double? lon, double? heading, double? distKm,
+        double homeLat, double homeLon)
+    {
+        // Within 5 km — essentially directly overhead regardless of heading
+        if (distKm is <= 5.0)
+            return "[bold white]⊙ Overhead[/]";
+
+        if (lat is null || lon is null || heading is null)
+            return "[grey]---[/]";
+
+        // Bearing from flight position → home (degrees clockwise from north)
+        double dLon  = ToRad(homeLon - lon.Value);
+        double fLat  = ToRad(lat.Value);
+        double hLat  = ToRad(homeLat);
+        double y     = Math.Sin(dLon) * Math.Cos(hLat);
+        double x     = Math.Cos(fLat) * Math.Sin(hLat) - Math.Sin(fLat) * Math.Cos(hLat) * Math.Cos(dLon);
+        double bearingToHome = (Math.Atan2(y, x) * 180.0 / Math.PI + 360.0) % 360.0;
+
+        // Angular difference folded to [0°, 180°]
+        double diff = Math.Abs((heading.Value - bearingToHome + 360.0) % 360.0);
+        if (diff > 180.0) diff = 360.0 - diff;
+
+        return diff switch
+        {
+            <= 30  => "[green]↓ Towards[/]",
+            >= 150 => "[red]↑ Away[/]",
+            _      => "[yellow]→ Crossing[/]"
+        };
+    }
+
+    private static double ToRad(double deg) => deg * Math.PI / 180.0;
 
     // Maps a bearing (0–360°) to an 8-point cardinal direction abbreviation
     private static string CardinalDirection(double degrees) => degrees switch
