@@ -110,6 +110,7 @@ public sealed class OpenSkyService : IFlightService
         var flights = raw.States
             .Select(s => MapToFlightState(s, loc.Latitude, loc.Longitude))
             .OfType<FlightState>()
+            .Where(f => !f.OnGround)
             // Filter by visual range when VisualRangeKm > 0 and position is known
             .Where(f => rangeKm <= 0 || f.DistanceKm is null || f.DistanceKm <= rangeKm)
             .ToList()
