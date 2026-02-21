@@ -8,34 +8,27 @@ using FlightTracker.Models;
 public sealed class OpenSkyService : IFlightService
 {
     // Separate clients: _apiClient talks to opensky-network.org/api,
-    // _authClient talks to auth.opensky-network.org (different host — cannot share BaseAddress)
+    // _authClient is managed by the shared OpenSkyTokenProvider.
     private readonly HttpClient _apiClient;
-    private readonly HttpClient _authClient;
     private readonly AppSettings _settings;
+    private readonly IOpenSkyTokenProvider _tokenProvider;
 
-    // ── Token cache ──────────────────────────────────────────────────────────
-    private string? _cachedToken;
-    private DateTimeOffset _tokenExpiresAt = DateTimeOffset.MinValue;
-
-    // Ensures only one concurrent token fetch even if polls overlap
-    private readonly SemaphoreSlim _tokenLock = new(1, 1);
-
-    // Reused across all deserialization calls
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true
     };
 
-    public OpenSkyService(IHttpClientFactory httpClientFactory, AppSettings settings)
+    public OpenSkyService(
+        IHttpClientFactory httpClientFactory,
+        AppSettings settings,
+        IOpenSkyTokenProvider tokenProvider)
     {
         _settings = settings;
+        _tokenProvider = tokenProvider;
 
         _apiClient = httpClientFactory.CreateClient("opensky-api");
         _apiClient.BaseAddress = new Uri(settings.OpenSky.BaseUrl);
         _apiClient.Timeout = TimeSpan.FromSeconds(15);
-
-        _authClient = httpClientFactory.CreateClient("opensky-auth");
-        _authClient.Timeout = TimeSpan.FromSeconds(15);
     }
 
     public async Task<IReadOnlyList<FlightState>> GetOverheadFlightsAsync(
@@ -44,7 +37,6 @@ public sealed class OpenSkyService : IFlightService
         var loc = _settings.HomeLocation;
         double radius = loc.BoundingBoxDegrees;
 
-        // Clamp latitude to valid WGS-84 range
         double lamin = Math.Max(-90.0, loc.Latitude - radius);
         double lamax = Math.Min(90.0, loc.Latitude + radius);
         double lomin = loc.Longitude - radius;
@@ -61,18 +53,17 @@ public sealed class OpenSkyService : IFlightService
         if (isUnauthorized)
         {
             // Token may have expired mid-interval — invalidate cache and retry once
-            _cachedToken = null;
+            _tokenProvider.Invalidate();
             (flights, _) = await TryFetchFlightsAsync(url, cancellationToken);
         }
 
         return flights;
     }
 
-    // Returns the flight list and a flag indicating whether a 401 was received.
     private async Task<(IReadOnlyList<FlightState> Flights, bool IsUnauthorized)>
         TryFetchFlightsAsync(string url, CancellationToken cancellationToken)
     {
-        string token = await GetAccessTokenAsync(cancellationToken);
+        string token = await _tokenProvider.GetAccessTokenAsync(cancellationToken);
 
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
@@ -83,7 +74,6 @@ public sealed class OpenSkyService : IFlightService
         if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
             return (Array.Empty<FlightState>(), true);
 
-        // 429: rate-limited — return empty list silently; loop retries after interval
         if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
             return (Array.Empty<FlightState>(), false);
 
@@ -111,64 +101,11 @@ public sealed class OpenSkyService : IFlightService
             .Select(s => MapToFlightState(s, loc.Latitude, loc.Longitude))
             .OfType<FlightState>()
             .Where(f => !f.OnGround)
-            // Filter by visual range when VisualRangeKm > 0 and position is known
             .Where(f => rangeKm <= 0 || f.DistanceKm is null || f.DistanceKm <= rangeKm)
             .ToList()
             .AsReadOnly();
 
         return (flights, false);
-    }
-
-    // ── OAuth2 Client Credentials token fetch with caching ───────────────────
-
-    private async Task<string> GetAccessTokenAsync(CancellationToken cancellationToken)
-    {
-        await _tokenLock.WaitAsync(cancellationToken);
-        try
-        {
-            // Return cached token if it won't expire in the next 60 seconds
-            if (_cachedToken is not null &&
-                DateTimeOffset.UtcNow < _tokenExpiresAt - TimeSpan.FromSeconds(60))
-            {
-                return _cachedToken;
-            }
-
-            // Fetch a new token — uses dedicated auth client (no BaseAddress conflict)
-            var body = new FormUrlEncodedContent(new Dictionary<string, string>
-            {
-                ["grant_type"]    = "client_credentials",
-                ["client_id"]     = _settings.OpenSky.ClientId,
-                ["client_secret"] = _settings.OpenSky.ClientSecret,
-            });
-
-            using HttpResponseMessage tokenResponse =
-                await _authClient.PostAsync(_settings.OpenSky.TokenUrl, body, cancellationToken);
-
-            if (!tokenResponse.IsSuccessStatusCode)
-            {
-                string errBody = await tokenResponse.Content.ReadAsStringAsync(cancellationToken);
-                throw new HttpRequestException(
-                    $"Token endpoint returned {(int)tokenResponse.StatusCode}: {errBody}",
-                    null, tokenResponse.StatusCode);
-            }
-
-            await using Stream tokenStream =
-                await tokenResponse.Content.ReadAsStreamAsync(cancellationToken);
-
-            var tokenData = await JsonSerializer.DeserializeAsync<TokenResponse>(
-                tokenStream, JsonOptions, cancellationToken)
-                ?? throw new InvalidOperationException(
-                    "Token endpoint returned an empty or invalid response.");
-
-            _cachedToken = tokenData.AccessToken;
-            _tokenExpiresAt = DateTimeOffset.UtcNow.AddSeconds(tokenData.ExpiresIn);
-
-            return _cachedToken;
-        }
-        finally
-        {
-            _tokenLock.Release();
-        }
     }
 
     // ── OpenSky state vector mapping ─────────────────────────────────────────

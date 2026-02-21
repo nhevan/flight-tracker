@@ -52,3 +52,57 @@ internal sealed class TokenResponse
     [System.Text.Json.Serialization.JsonPropertyName("expires_in")]
     public int ExpiresIn { get; set; }
 }
+
+// Internal: adsbdb.com /v0/callsign/{callsign} response.
+// Unknown callsign returns { "response": "invalid callsign: ..." } — FlightRoute will be null.
+internal sealed class AdsbdbCallsignResponse
+{
+    [System.Text.Json.Serialization.JsonPropertyName("response")]
+    public AdsbdbFlightRoute? Response { get; set; }
+}
+
+internal sealed class AdsbdbFlightRoute
+{
+    [System.Text.Json.Serialization.JsonPropertyName("flightroute")]
+    public AdsbdbRouteDetail? Flightroute { get; set; }
+}
+
+internal sealed class AdsbdbRouteDetail
+{
+    [System.Text.Json.Serialization.JsonPropertyName("origin")]
+    public AdsbdbAirport? Origin { get; set; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("destination")]
+    public AdsbdbAirport? Destination { get; set; }
+}
+
+internal sealed class AdsbdbAirport
+{
+    [System.Text.Json.Serialization.JsonPropertyName("name")]
+    public string? Name { get; set; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("iata_code")]
+    public string? IataCode { get; set; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("icao_code")]
+    public string? IcaoCode { get; set; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("country_name")]
+    public string? CountryName { get; set; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("municipality")]
+    public string? Municipality { get; set; }
+}
+
+// Internal: root response from hexdb.io /api/v1/aircraft/{hex}
+internal sealed class HexDbAircraftResponse
+{
+    [System.Text.Json.Serialization.JsonPropertyName("ICAOTypeCode")]
+    public string? ICAOTypeCode { get; set; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("Registration")]
+    public string? Registration { get; set; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("RegisteredOwners")]
+    public string? RegisteredOwners { get; set; }
+}

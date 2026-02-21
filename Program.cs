@@ -26,13 +26,17 @@ if (settings.Polling.IntervalSeconds < MinimumIntervalSeconds)
 // ── DI Container ─────────────────────────────────────────────────────────────
 var services = new ServiceCollection();
 services.AddSingleton(settings);
-// Register IHttpClientFactory so OpenSkyService can create two separate clients
-// (one for the API, one for the auth token endpoint — different hosts)
+// IHttpClientFactory manages connection pools for all HTTP clients in the app
 services.AddHttpClient();
+services.AddSingleton<IOpenSkyTokenProvider, OpenSkyTokenProvider>();
 services.AddSingleton<IFlightService, OpenSkyService>();
+services.AddSingleton<IFlightRouteService, FlightRouteService>();
+services.AddSingleton<IAircraftInfoService, HexDbService>();
+services.AddSingleton<IFlightEnrichmentService, FlightEnrichmentService>();
 await using ServiceProvider provider = services.BuildServiceProvider();
 
-var flightService = provider.GetRequiredService<IFlightService>();
+var flightService     = provider.GetRequiredService<IFlightService>();
+var enrichmentService = provider.GetRequiredService<IFlightEnrichmentService>();
 
 // ── Graceful shutdown (Ctrl+C) ────────────────────────────────────────────────
 using var cts = new CancellationTokenSource();
@@ -54,10 +58,11 @@ while (!cts.Token.IsCancellationRequested)
 {
     try
     {
-        var flights = await flightService.GetOverheadFlightsAsync(cts.Token);
+        var flights  = await flightService.GetOverheadFlightsAsync(cts.Token);
+        var enriched = await enrichmentService.EnrichAsync(flights, cts.Token);
 
         FlightTableRenderer.Render(
-            flights,
+            enriched,
             settings.HomeLocation.Latitude,
             settings.HomeLocation.Longitude,
             settings.HomeLocation.VisualRangeKm,
