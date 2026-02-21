@@ -1,0 +1,14 @@
+# .NET build artifacts
+bin/
+obj/
+
+# User secrets / credentials
+appsettings.json
+appsettings.*.json
+!appsettings.example.json
+
+# IDE
+.idea/
+.vs/
+*.user
+.vscode/
