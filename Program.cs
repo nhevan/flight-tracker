@@ -41,14 +41,26 @@ var flightService     = provider.GetRequiredService<IFlightService>();
 var enrichmentService = provider.GetRequiredService<IFlightEnrichmentService>();
 var telegramService   = provider.GetRequiredService<ITelegramNotificationService>();
 
-// ── Graceful shutdown (Ctrl+C) ────────────────────────────────────────────────
+// ── Graceful shutdown (Ctrl+C and terminal close) ────────────────────────────
 using var cts = new CancellationTokenSource();
+
+// Ctrl+C in an interactive terminal
+// Note: do NOT set e.Cancel = true — that would suppress the signal on the
+// parent "dotnet run" process, causing it to exit and orphan this child process.
+// Instead we cancel our token and let the process exit naturally.
 Console.CancelKeyPress += (_, e) =>
 {
-    e.Cancel = true; // prevent abrupt process termination
     cts.Cancel();
     Console.WriteLine();
     Console.WriteLine("Shutting down gracefully...");
+};
+
+// SIGTERM — sent when the terminal window is closed, the parent process dies,
+// or the OS / Docker / systemd asks the process to stop
+AppDomain.CurrentDomain.ProcessExit += (_, _) =>
+{
+    if (!cts.IsCancellationRequested)
+        cts.Cancel();
 };
 
 // ── Polling Loop ─────────────────────────────────────────────────────────────
