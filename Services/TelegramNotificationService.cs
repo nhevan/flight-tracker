@@ -35,17 +35,36 @@ public sealed class TelegramNotificationService : ITelegramNotificationService
         try
         {
             string text = BuildMessage(flight, direction, etaSeconds);
+            string? photoUrl = flight.PhotoUrl;
 
-            string url = $"https://api.telegram.org/bot{_settings.BotToken}/sendMessage";
+            string apiUrl;
+            object payload;
 
-            var payload = new
+            if (!string.IsNullOrEmpty(photoUrl))
             {
-                chat_id = _settings.ChatId,
-                text,
-                parse_mode = "HTML"
-            };
+                // Send photo with caption when we have an aircraft image
+                apiUrl  = $"https://api.telegram.org/bot{_settings.BotToken}/sendPhoto";
+                payload = new
+                {
+                    chat_id     = _settings.ChatId,
+                    photo       = photoUrl,
+                    caption     = text,
+                    parse_mode  = "HTML"
+                };
+            }
+            else
+            {
+                // Fall back to plain text message when no photo is available
+                apiUrl  = $"https://api.telegram.org/bot{_settings.BotToken}/sendMessage";
+                payload = new
+                {
+                    chat_id    = _settings.ChatId,
+                    text,
+                    parse_mode = "HTML"
+                };
+            }
 
-            using var response = await _httpClient.PostAsJsonAsync(url, payload, cancellationToken);
+            using var response = await _httpClient.PostAsJsonAsync(apiUrl, payload, cancellationToken);
 
             if (!response.IsSuccessStatusCode)
             {

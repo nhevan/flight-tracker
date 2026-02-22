@@ -33,6 +33,7 @@ services.AddSingleton<IOpenSkyTokenProvider, OpenSkyTokenProvider>();
 services.AddSingleton<IFlightService, OpenSkyService>();
 services.AddSingleton<IFlightRouteService, FlightRouteService>();
 services.AddSingleton<IAircraftInfoService, HexDbService>();
+services.AddSingleton<IAircraftPhotoService, PlaneSpottersPhotoService>();
 services.AddSingleton<IFlightEnrichmentService, FlightEnrichmentService>();
 services.AddSingleton<ITelegramNotificationService, TelegramNotificationService>();
 await using ServiceProvider provider = services.BuildServiceProvider();
