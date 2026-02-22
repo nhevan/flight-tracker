@@ -48,6 +48,7 @@ public static class FlightTableRenderer
             .AddColumn(new TableColumn("[bold]Speed (km/h)[/]").RightAligned())
             .AddColumn(new TableColumn("[bold]Heading[/]").RightAligned())
             .AddColumn(new TableColumn("[bold]Direction[/]").Centered())
+            .AddColumn(new TableColumn("[bold]Overhead in[/]").RightAligned())
             .AddColumn(new TableColumn("[bold]V/Rate (m/s)[/]").RightAligned())
             .AddColumn(new TableColumn("[bold]ETE[/]").RightAligned());
 
@@ -90,6 +91,7 @@ public static class FlightTableRenderer
                 speed,
                 heading,
                 FormatDirection(f.Latitude, f.Longitude, f.HeadingDegrees, f.DistanceKm, homeLat, homeLon),
+                FormatEtaOverhead(f.Latitude, f.Longitude, f.HeadingDegrees, f.VelocityMetersPerSecond, f.DistanceKm, homeLat, homeLon),
                 vrate,
                 FormatEte(ef.Route, f.VelocityMetersPerSecond));
         }
@@ -175,6 +177,32 @@ public static class FlightTableRenderer
             "Crossing" => "[yellow]→ Crossing[/]",
             _          => "[grey]---[/]"
         };
+    }
+
+    /// <summary>
+    /// Shows the time until the flight is at its closest point to home.
+    /// Returns "Now" when already overhead, a countdown like "4m 30s" when approaching,
+    /// or "---" when the closest approach is already behind the flight.
+    /// </summary>
+    private static string FormatEtaOverhead(
+        double? lat, double? lon, double? heading, double? speedMs, double? distKm,
+        double homeLat, double homeLon)
+    {
+        if (distKm is <= 5.0)
+            return "[bold white]Now[/]";
+
+        double? secs = FlightDirectionHelper.EtaToOverheadSeconds(
+            lat, lon, heading, speedMs, homeLat, homeLon);
+
+        if (secs is null)
+            return "[grey]---[/]";
+
+        int total = (int)secs.Value;
+        int m = total / 60;
+        int s = total % 60;
+        return m > 0
+            ? $"{m}m {s:D2}s"
+            : $"{s}s";
     }
 
     // Maps a bearing (0–360°) to an 8-point cardinal direction abbreviation

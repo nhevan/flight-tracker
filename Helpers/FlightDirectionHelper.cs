@@ -41,5 +41,40 @@ public static class FlightDirectionHelper
         };
     }
 
+    /// <summary>
+    /// Returns the seconds until the flight reaches its closest approach point to home
+    /// (i.e. the moment it is most directly overhead), or null if the closest approach
+    /// is already behind the flight or required data is missing.
+    ///
+    /// Uses a flat-earth equirectangular projection centred on the home position —
+    /// error is less than 0.1 % for distances under 100 km.
+    /// </summary>
+    public static double? EtaToOverheadSeconds(
+        double? lat, double? lon, double? heading, double? speedMs,
+        double homeLat, double homeLon)
+    {
+        if (lat is null || lon is null || heading is null || speedMs is null || speedMs <= 0)
+            return null;
+
+        const double MetresPerDegree = 111_320.0;
+        double scale = Math.Cos(lat.Value * Math.PI / 180.0); // longitude compression
+
+        // Flight position relative to home in metres (east = +x, north = +y)
+        double dx = (lon.Value - homeLon) * scale * MetresPerDegree;
+        double dy = (lat.Value  - homeLat) * MetresPerDegree;
+
+        // Heading unit vector (clockwise-from-north → standard x/y)
+        double headRad = heading.Value * Math.PI / 180.0;
+        double hx = Math.Sin(headRad);
+        double hy = Math.Cos(headRad);
+
+        // Scalar projection of (home − flight) onto heading vector
+        // = distance along the current track to the closest approach point
+        double t = (-dx) * hx + (-dy) * hy;
+
+        // t > 0 means the closest approach is ahead; t ≤ 0 means it's already passed
+        return t > 0 ? t / speedMs.Value : null;
+    }
+
     private static double ToRad(double deg) => deg * Math.PI / 180.0;
 }
