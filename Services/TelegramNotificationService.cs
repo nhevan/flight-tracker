@@ -24,6 +24,7 @@ public sealed class TelegramNotificationService : ITelegramNotificationService
     public async Task NotifyAsync(
         EnrichedFlightState flight,
         string direction,
+        double? etaSeconds,
         CancellationToken cancellationToken)
     {
         if (!_settings.Enabled
@@ -33,7 +34,7 @@ public sealed class TelegramNotificationService : ITelegramNotificationService
 
         try
         {
-            string text = BuildMessage(flight, direction);
+            string text = BuildMessage(flight, direction, etaSeconds);
 
             string url = $"https://api.telegram.org/bot{_settings.BotToken}/sendMessage";
 
@@ -59,7 +60,7 @@ public sealed class TelegramNotificationService : ITelegramNotificationService
         }
     }
 
-    private static string BuildMessage(EnrichedFlightState ef, string direction)
+    private static string BuildMessage(EnrichedFlightState ef, string direction, double? etaSeconds)
     {
         var f = ef.State;
 
@@ -93,11 +94,21 @@ public sealed class TelegramNotificationService : ITelegramNotificationService
         string speed   = f.VelocityMetersPerSecond.HasValue
             ? (f.VelocityMetersPerSecond.Value * 3.6).ToString("F0", CultureInfo.InvariantCulture) + " km/h"
             : "?";
+        string eta     = FormatEta(etaSeconds);
 
         return $"{dirEmoji} <b>{EscapeHtml(callsign)}</b> — {direction}\n" +
                $"Route: {EscapeHtml(route)}\n" +
                $"Aircraft: {EscapeHtml(aircraft)}\n" +
-               $"Distance: {dist} | Alt: {alt} | Speed: {speed}";
+               $"Distance: {dist} | Alt: {alt} | Speed: {speed} | Overhead in: {eta}";
+    }
+
+    private static string FormatEta(double? etaSeconds)
+    {
+        if (etaSeconds is null) return "Now";
+        int total = (int)etaSeconds.Value;
+        int m = total / 60;
+        int s = total % 60;
+        return m > 0 ? $"{m}m {s:D2}s" : $"{s}s";
     }
 
     private static string BuildAircraftString(AircraftInfo? info)

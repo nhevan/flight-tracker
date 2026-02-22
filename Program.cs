@@ -60,6 +60,9 @@ TimeSpan pollInterval = TimeSpan.FromSeconds(settings.Polling.IntervalSeconds);
 // Tracks ICAO24s seen on the previous poll to detect newly-entering flights
 var previousIcaos = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
+// Tracks flights already notified via Telegram (avoids repeat messages per pass)
+var notifiedIcaos = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
 while (!cts.Token.IsCancellationRequested)
 {
     try
@@ -67,31 +70,41 @@ while (!cts.Token.IsCancellationRequested)
         var flights  = await flightService.GetOverheadFlightsAsync(cts.Token);
         var enriched = await enrichmentService.EnrichAsync(flights, cts.Token);
 
+        double homeLat = settings.HomeLocation.Latitude;
+        double homeLon = settings.HomeLocation.Longitude;
+
         // Handle new flights (skipped on first poll so startup is silent)
         if (previousIcaos.Count > 0)
         {
-            double homeLat = settings.HomeLocation.Latitude;
-            double homeLon = settings.HomeLocation.Longitude;
-
             foreach (var ef in enriched)
             {
                 if (!previousIcaos.Contains(ef.State.Icao24))
-                {
                     Console.Write('\a'); // audible alert for every new flight
-
-                    // Telegram notification only for Overhead or Towards flights
-                    var f = ef.State;
-                    string? dir = FlightDirectionHelper.Classify(
-                        f.Latitude, f.Longitude, f.HeadingDegrees, f.DistanceKm,
-                        homeLat, homeLon);
-
-                    if (dir is "Overhead" or "Towards")
-                        await telegramService.NotifyAsync(ef, dir, cts.Token);
-                }
             }
         }
         previousIcaos = enriched.Select(ef => ef.State.Icao24)
                                  .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        // Telegram: notify when any flight is ≤ 2 minutes from overhead
+        foreach (var ef in enriched)
+        {
+            var f = ef.State;
+            double? etaSecs = FlightDirectionHelper.EtaToOverheadSeconds(
+                f.Latitude, f.Longitude, f.HeadingDegrees, f.VelocityMetersPerSecond,
+                homeLat, homeLon);
+
+            if (etaSecs is <= 120.0 && !notifiedIcaos.Contains(f.Icao24))
+            {
+                string? dir = FlightDirectionHelper.Classify(
+                    f.Latitude, f.Longitude, f.HeadingDegrees, f.DistanceKm,
+                    homeLat, homeLon);
+                await telegramService.NotifyAsync(ef, dir ?? "Towards", etaSecs, cts.Token);
+                notifiedIcaos.Add(f.Icao24);
+            }
+        }
+
+        // Remove flights that left range so they can re-trigger if they return
+        notifiedIcaos.RemoveWhere(icao => !previousIcaos.Contains(icao));
 
         FlightTableRenderer.Render(
             enriched,
