@@ -106,7 +106,10 @@ while (!cts.Token.IsCancellationRequested)
                 f.Latitude, f.Longitude, f.HeadingDegrees, f.VelocityMetersPerSecond,
                 homeLat, homeLon);
 
-            if (etaSecs is <= 120.0 && !notifiedIcaos.Contains(f.Icao24))
+            if (etaSecs is <= 120.0
+                && f.BarometricAltitudeMeters is not null
+                && f.BarometricAltitudeMeters <= settings.Telegram.MaxAltitudeMeters
+                && !notifiedIcaos.Contains(f.Icao24))
             {
                 string? dir = FlightDirectionHelper.Classify(
                     f.Latitude, f.Longitude, f.HeadingDegrees, f.DistanceKm,

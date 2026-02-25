@@ -49,4 +49,7 @@ public sealed class TelegramSettings
     /// https://api.telegram.org/bot{TOKEN}/getUpdates and reading update.message.chat.id
     /// </summary>
     public string ChatId { get; set; } = string.Empty;
+
+    /// <summary>Only notify for flights at or below this barometric altitude (metres). Default 3000 m.</summary>
+    public double MaxAltitudeMeters { get; set; } = 3000.0;
 }
