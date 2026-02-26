@@ -34,6 +34,10 @@ public sealed class MapboxSnapshotService : IMapSnapshotService
         if (lat is null || lon is null)
             return null;
 
+        // Without heading data the map shows no meaningful trajectory — skip it.
+        if (headingDegrees is null)
+            return null;
+
         try
         {
             // Distance from plane to home (equirectangular, < 0.1% error within 100 km)
@@ -72,12 +76,19 @@ public sealed class MapboxSnapshotService : IMapSnapshotService
     /// <summary>
     /// Zoom level based on plane-to-home distance so the plane marker is always
     /// visible on the home-centred map.
+    ///
+    /// At lat ~52 °N a 600 px-wide image covers approximately:
+    ///   zoom 9  → ~113 km  (half-width ~56 km)
+    ///   zoom 11 → ~28 km   (half-width ~14 km)
+    ///   zoom 13 → ~7 km    (half-width ~3.5 km)
+    /// Thresholds are set conservatively below each half-width so the plane
+    /// marker always falls inside the image bounds.
     /// </summary>
     private static int DistanceToZoom(double distKm) => distKm switch
     {
-        > 30 => 9,   // > 30 km  — wide regional view  (~180 km across)
-        > 10 => 11,  // 10–30 km — city-level           (~45 km across)
-        _    => 13   // < 10 km  — neighbourhood        (~11 km across)
+        > 13 => 9,   // > 13 km  — wide regional view  (~113 km across)
+        > 3  => 11,  // 3–13 km  — city-level           (~28 km across)
+        _    => 13   // < 3 km   — neighbourhood         (~7 km across)
     };
 
     /// <summary>
@@ -86,9 +97,9 @@ public sealed class MapboxSnapshotService : IMapSnapshotService
     /// </summary>
     private static double ZoomToHalfTrajectoryKm(int zoom) => zoom switch
     {
-        9  => 100.0,
-        11 => 40.0,
-        _  => 15.0
+        9  => 80.0,
+        11 => 20.0,
+        _  => 5.0
     };
 
     /// <summary>
@@ -112,6 +123,8 @@ public sealed class MapboxSnapshotService : IMapSnapshotService
         // Blue home pin — shown at the map centre so the user can see their reference point
         string homeMarker = $"pin-s-home+4499ff({homeLon.ToString("F6", ic)},{homeLat.ToString("F6", ic)})";
 
+        // Defensive guard — GetSnapshotAsync already returns null when heading is null,
+        // but kept here in case BuildOverlays is ever called directly.
         if (headingDegrees is null)
             return $"{planeMarker},{homeMarker}";
 
@@ -150,8 +163,9 @@ public sealed class MapboxSnapshotService : IMapSnapshotService
         string geoJsonStr = JsonSerializer.Serialize(geoJson,
             new JsonSerializerOptions { PropertyNamingPolicy = null });
 
-        // JsonSerializer writes "stroke_width"; GeoJSON spec requires "stroke-width"
-        geoJsonStr = geoJsonStr.Replace("stroke_width", "stroke-width");
+        // JsonSerializer writes underscores; Mapbox GeoJSON spec requires hyphens
+        geoJsonStr = geoJsonStr.Replace("stroke_width",   "stroke-width")
+                               .Replace("stroke_opacity", "stroke-opacity");
 
         string encodedGeoJson = Uri.EscapeDataString(geoJsonStr);
 
