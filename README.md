@@ -195,35 +195,44 @@ The database is never deleted automatically — it accumulates over time. You ca
 
 ## Deploying to EC2
 
-The app runs as a systemd service on a Linux EC2 instance. Deployment is git-based — the server pulls and republishes from the repo on each deploy.
+The app runs as a systemd service on a Linux EC2 instance. Two scripts handle the full lifecycle:
 
-### One-time EC2 setup
+| Script | Where to run | When to use |
+|--------|-------------|-------------|
+| `ec2-setup.sh` | On EC2 | First-time setup only |
+| `deploy.sh` | Local machine | Every subsequent update |
+
+### First-time setup (run on EC2)
 
 ```bash
 # 1. Install .NET 9 SDK (https://learn.microsoft.com/dotnet/core/install/linux)
 
-# 2. Install the systemd service
-sudo cp /home/ec2-user/flight-tracker/flighttracker.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable flighttracker
+# 2. Clone the repo
+git clone https://github.com/your-user/flight-tracker.git /home/ec2-user/flight-tracker
 
-# 3. (Optional) seed historical data from your local machine
+# 3. Run the setup script
+cd /home/ec2-user/flight-tracker
+./ec2-setup.sh
+```
+
+`ec2-setup.sh` will:
+- Create `/opt/flighttracker/{app,data}` with correct ownership
+- Pull the latest code and publish the app
+- Prompt for all config values (coordinates, OpenSky, Telegram, Anthropic, Mapbox)
+- Install and start the systemd service
+
+```bash
+# (Optional) seed historical data from your local machine
 scp /path/to/flight_stats.db user@your-ec2:/opt/flighttracker/data/
 ```
 
-### Deploying
-
-From your local machine, run:
+### Subsequent updates (run from local machine)
 
 ```bash
 EC2_HOST=user@your-ec2-ip ./deploy.sh
 ```
 
-**First run:** detects that `appsettings.json` is missing on EC2 and walks through interactive prompts to create it (home coordinates, OpenSky credentials, and optional Telegram / Anthropic / Mapbox tokens). Config is written directly to the server — API keys never touch the repo.
-
-**Every subsequent run:** skips config and just does `git pull → dotnet publish → systemctl restart`.
-
-If placeholder values are still in the config (e.g. after a manual edit gone wrong), the script warns and offers to re-run setup.
+Skips config and does `git pull → dotnet publish → systemctl restart`. Warns and offers to re-run config if placeholder values are detected.
 
 ### Useful commands on EC2
 
@@ -252,5 +261,8 @@ flightTracker/
 ├── Services/                      # Business logic (interfaces + implementations)
 ├── Helpers/FlightDirectionHelper.cs  # Geospatial calculations (direction, ETA)
 ├── Display/FlightTableRenderer.cs    # Terminal UI (Spectre.Console)
-└── appsettings.example.json       # Config template
+├── appsettings.example.json       # Config template
+├── ec2-setup.sh                   # One-time EC2 setup (run on EC2)
+├── deploy.sh                      # Subsequent updates (run from local machine)
+└── flighttracker.service          # systemd unit file
 ```
