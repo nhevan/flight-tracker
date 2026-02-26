@@ -137,6 +137,34 @@ The table updates every poll and shows:
 | Overhead in | Countdown to closest approach |
 | V/Rate (m/s) | Climb or descent rate |
 
+## Flight Stats
+
+Every time a Telegram notification fires, the sighting is logged to a local SQLite database (`flight_stats.db` in the app's output directory). Send **`stats`** or **`/stats`** to the Telegram bot at any time to get a summary:
+
+```
+📊 Flight Tracker Stats
+
+✈️ Total planes tracked: 1,247
+📅 Today: 43 planes (31 unique)
+🏆 Busiest hour: 17:00–18:00 (avg 12.3/day)
+🛫 Most spotted airline: KLM (312 sightings)
+🦄 Rarest aircraft type: A388 (1 sighting)
+⏱️ Longest gap: 4h 23m (12 Jan 03:17–07:40)
+🔥 Current streak: 6 consecutive hours with planes
+```
+
+| Stat | Description |
+|------|-------------|
+| Total | All-time sighting count |
+| Today | Sightings since midnight (local time) |
+| Busiest hour | Hour of day (0–23) historically with the most planes |
+| Most spotted airline | Operator logged the most times |
+| Rarest aircraft type | ICAO type code seen the fewest times |
+| Longest gap | Biggest gap between any two consecutive sightings |
+| Current streak | Consecutive hours (going back from now) with at least one sighting |
+
+The database is never deleted automatically — it accumulates over time. You can inspect it with any SQLite viewer (e.g. [DB Browser for SQLite](https://sqlitebrowser.org)).
+
 ## External APIs Used
 
 | Service | Purpose | Auth |

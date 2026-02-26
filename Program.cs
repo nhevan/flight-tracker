@@ -1,4 +1,5 @@
 using FlightTracker.Configuration;
+using FlightTracker.Data;
 using FlightTracker.Display;
 using FlightTracker.Helpers;
 using FlightTracker.Services;
@@ -37,11 +38,15 @@ services.AddSingleton<IAircraftPhotoService, PlaneSpottersPhotoService>();
 services.AddSingleton<IAircraftFactsService, AnthropicAircraftFactsService>();
 services.AddSingleton<IFlightEnrichmentService, FlightEnrichmentService>();
 services.AddSingleton<ITelegramNotificationService, TelegramNotificationService>();
+services.AddSingleton<IFlightLoggingService, SqliteFlightLoggingService>();
+services.AddSingleton<ITelegramCommandListener, TelegramCommandListener>();
 await using ServiceProvider provider = services.BuildServiceProvider();
 
 var flightService     = provider.GetRequiredService<IFlightService>();
 var enrichmentService = provider.GetRequiredService<IFlightEnrichmentService>();
 var telegramService   = provider.GetRequiredService<ITelegramNotificationService>();
+var loggingService    = provider.GetRequiredService<IFlightLoggingService>();
+var commandListener   = provider.GetRequiredService<ITelegramCommandListener>();
 
 // ── Graceful shutdown (Ctrl+C and terminal close) ────────────────────────────
 using var cts = new CancellationTokenSource();
@@ -64,6 +69,12 @@ AppDomain.CurrentDomain.ProcessExit += (_, _) =>
     if (!cts.IsCancellationRequested)
         cts.Cancel();
 };
+
+// ── Initialise database ───────────────────────────────────────────────────────
+await loggingService.InitialiseAsync(cts.Token);
+
+// ── Start Telegram command listener (background) ──────────────────────────────
+_ = commandListener.StartAsync(cts.Token);
 
 // ── Polling Loop ─────────────────────────────────────────────────────────────
 Console.WriteLine("Flight Tracker starting. Press Ctrl+C to exit.");
@@ -99,7 +110,7 @@ while (!cts.Token.IsCancellationRequested)
         previousIcaos = enriched.Select(ef => ef.State.Icao24)
                                  .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        // Telegram: notify when any flight is ≤ 2 minutes from overhead
+        // Telegram: notify and log when any flight is ≤ 2 minutes from overhead
         foreach (var ef in enriched)
         {
             var f = ef.State;
@@ -116,6 +127,7 @@ while (!cts.Token.IsCancellationRequested)
                     f.Latitude, f.Longitude, f.HeadingDegrees, f.DistanceKm,
                     homeLat, homeLon);
                 await telegramService.NotifyAsync(ef, dir ?? "Towards", etaSecs, cts.Token);
+                await loggingService.LogAsync(ef, dir ?? "Towards", etaSecs, DateTimeOffset.UtcNow, cts.Token);
                 notifiedIcaos.Add(f.Icao24);
             }
         }
