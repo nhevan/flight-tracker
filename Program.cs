@@ -75,8 +75,16 @@ AppDomain.CurrentDomain.ProcessExit += (_, _) =>
 await loggingService.InitialiseAsync(cts.Token);
 
 // ── Startup notification ──────────────────────────────────────────────────────
-var startupStats = await loggingService.GetStatsAsync(cts.Token);
-await telegramService.SendStatusAsync(FormatStartupMessage(startupStats), cts.Token);
+try
+{
+    var startupStats = await loggingService.GetStatsAsync(cts.Token);
+    await telegramService.SendStatusAsync(FormatStartupMessage(startupStats), cts.Token);
+}
+catch (Exception ex)
+{
+    Console.WriteLine($"[Startup] Stats unavailable: {ex.Message}");
+    await telegramService.SendStatusAsync("🟢 <b>FlightTracker started</b>\n⚠️ DB stats unavailable at startup.", cts.Token);
+}
 
 // ── Start Telegram command listener (background) ──────────────────────────────
 _ = commandListener.StartAsync(cts.Token);
