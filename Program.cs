@@ -74,6 +74,10 @@ AppDomain.CurrentDomain.ProcessExit += (_, _) =>
 // ── Initialise database ───────────────────────────────────────────────────────
 await loggingService.InitialiseAsync(cts.Token);
 
+// ── Startup notification ──────────────────────────────────────────────────────
+var startupStats = await loggingService.GetStatsAsync(cts.Token);
+await telegramService.SendStatusAsync(FormatStartupMessage(startupStats), cts.Token);
+
 // ── Start Telegram command listener (background) ──────────────────────────────
 _ = commandListener.StartAsync(cts.Token);
 
@@ -88,6 +92,9 @@ var previousIcaos = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
 // Tracks flights already notified via Telegram (avoids repeat messages per pass)
 var notifiedIcaos = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+// Error notification snooze — avoids Telegram spam on repeated failures
+DateTimeOffset? lastErrorNotifiedAt = null;
 
 while (!cts.Token.IsCancellationRequested)
 {
@@ -151,11 +158,13 @@ while (!cts.Token.IsCancellationRequested)
     {
         Console.WriteLine($"[HTTP Error] {ex.StatusCode}: {ex.Message}");
         Console.WriteLine("Retrying on next poll...");
+        await NotifyErrorAsync($"⚠️ <b>FlightTracker HTTP error</b>\n{ex.StatusCode}: {EscapeHtml(ex.Message)}");
     }
     catch (Exception ex)
     {
         Console.WriteLine($"[Error] {ex.GetType().Name}: {ex.Message}");
         Console.WriteLine("Retrying on next poll...");
+        await NotifyErrorAsync($"⚠️ <b>FlightTracker error</b>\n{ex.GetType().Name}: {EscapeHtml(ex.Message)}");
     }
 
     try
@@ -169,3 +178,50 @@ while (!cts.Token.IsCancellationRequested)
 }
 
 Console.WriteLine("Flight Tracker stopped.");
+
+// ── Local helpers ─────────────────────────────────────────────────────────────
+
+async Task NotifyErrorAsync(string htmlMessage)
+{
+    var now = DateTimeOffset.UtcNow;
+    int snoozeMins = settings.Telegram.ErrorNotificationSnoozeMinutes;
+    if (lastErrorNotifiedAt is not null &&
+        (now - lastErrorNotifiedAt.Value).TotalMinutes < snoozeMins)
+        return;
+
+    lastErrorNotifiedAt = now;
+    await telegramService.SendStatusAsync(htmlMessage, cts.Token);
+}
+
+static string FormatStartupMessage(FlightTracker.Models.FlightStats s)
+{
+    var sb = new System.Text.StringBuilder();
+    sb.AppendLine("🟢 <b>FlightTracker started</b>");
+    sb.AppendLine();
+    sb.AppendLine("📊 <b>Database summary</b>");
+    sb.AppendLine($"• Total sightings: {s.TotalSightings:N0}");
+    sb.AppendLine($"• Today: {s.TodayCount} flights, {s.TodayUniqueAircraft} unique aircraft");
+
+    if (s.CurrentStreakHours > 0)
+        sb.AppendLine($"• Current streak: {s.CurrentStreakHours} h");
+
+    if (s.BusiestHour.HasValue)
+        sb.AppendLine($"• Busiest hour: {s.BusiestHour:D2}:00 (avg {s.BusiestHourAvgPerDay:F1}/day)");
+
+    if (!string.IsNullOrEmpty(s.MostSpottedAirline))
+        sb.AppendLine($"• Most spotted: {s.MostSpottedAirline} ({s.MostSpottedAirlineCount}×)");
+
+    if (s.LongestGap.HasValue)
+    {
+        var gap = s.LongestGap.Value;
+        string gapStr = gap.TotalHours >= 1
+            ? $"{(int)gap.TotalHours} h {gap.Minutes} m"
+            : $"{gap.Minutes} m";
+        sb.AppendLine($"• Longest sky gap: {gapStr}");
+    }
+
+    return sb.ToString().TrimEnd();
+}
+
+static string EscapeHtml(string s) =>
+    s.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;");

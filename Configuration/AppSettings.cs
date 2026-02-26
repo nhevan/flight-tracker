@@ -62,6 +62,13 @@ public sealed class TelegramSettings
 
     /// <summary>Only notify for flights at or below this barometric altitude (metres). Default 3000 m.</summary>
     public double MaxAltitudeMeters { get; set; } = 3000.0;
+
+    /// <summary>
+    /// How long to wait before sending another error notification after one has already fired.
+    /// Prevents Telegram spam when a dependency (e.g. OpenSky) is down for an extended period.
+    /// Set to a low value (e.g. 1) during local testing. Default: 30 minutes.
+    /// </summary>
+    public int ErrorNotificationSnoozeMinutes { get; set; } = 30;
 }
 
 public sealed class AnthropicSettings

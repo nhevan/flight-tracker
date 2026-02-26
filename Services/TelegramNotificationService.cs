@@ -200,6 +200,38 @@ public sealed class TelegramNotificationService : ITelegramNotificationService
             : main;
     }
 
+    public async Task SendStatusAsync(string message, CancellationToken cancellationToken = default)
+    {
+        if (!_settings.Enabled
+            || string.IsNullOrEmpty(_settings.BotToken)
+            || string.IsNullOrEmpty(_settings.ChatId))
+            return;
+
+        try
+        {
+            var apiUrl = $"https://api.telegram.org/bot{_settings.BotToken}/sendMessage";
+            var payload = new
+            {
+                chat_id    = _settings.ChatId,
+                text       = message,
+                parse_mode = "HTML"
+            };
+
+            using var response = await _httpClient.PostAsync(
+                apiUrl, JsonContent.Create(payload), cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                string body = await response.Content.ReadAsStringAsync(cancellationToken);
+                Console.WriteLine($"[Telegram] Status send warning: {(int)response.StatusCode} — {body}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Telegram] Status send error: {ex.Message}");
+        }
+    }
+
     // Escape characters that have special meaning in Telegram HTML parse mode
     private static string EscapeHtml(string s) =>
         s.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;");
