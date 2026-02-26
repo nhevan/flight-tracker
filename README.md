@@ -202,16 +202,12 @@ The app runs as a systemd service on a Linux EC2 instance. Deployment is git-bas
 ```bash
 # 1. Install .NET SDK (https://learn.microsoft.com/dotnet/core/install/linux)
 
-# 2. Create the app and data directories
-sudo mkdir -p /opt/flighttracker/app /opt/flighttracker/data
-sudo chown -R $USER: /opt/flighttracker
-
-# 3. Install the systemd service
+# 2. Install the systemd service
 sudo cp /home/ec2-user/flight-tracker/flighttracker.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable flighttracker
 
-# 4. (Optional) seed historical data from your local machine
+# 3. (Optional) seed historical data from your local machine
 scp /path/to/flight_stats.db user@your-ec2:/opt/flighttracker/data/
 ```
 
