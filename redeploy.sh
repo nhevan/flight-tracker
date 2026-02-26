@@ -38,9 +38,12 @@ elif grep -q 'your_client_id\|YOUR_' "$CONFIG" 2>/dev/null; then
     echo "   Run ./ec2-setup.sh to set up your credentials."
 fi
 
-# ── 4. Restart service ────────────────────────────────────────────────────────
+# ── 4. Update and restart service ────────────────────────────────────────────
 
-step "Restarting flighttracker..."
+step "Updating and restarting flighttracker..."
+sudo cp "$REPO_DIR/flighttracker.service" /etc/systemd/system/flighttracker.service
+sudo systemctl daemon-reload
+sudo systemctl reset-failed "$SERVICE" 2>/dev/null || true
 sudo systemctl restart "$SERVICE"
 
 # ── 5. Verify ─────────────────────────────────────────────────────────────────

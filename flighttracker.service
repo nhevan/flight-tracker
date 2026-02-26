@@ -9,6 +9,7 @@ WorkingDirectory=/opt/flighttracker/app
 ExecStart=/usr/bin/dotnet /opt/flighttracker/app/flightTracker.dll
 Restart=always
 RestartSec=15
+StartLimitIntervalSec=0
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=flighttracker
