@@ -1,0 +1,17 @@
+[Unit]
+Description=FlightTracker — ADS-B overhead flight notifier
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/flighttracker/app
+ExecStart=/usr/bin/dotnet /opt/flighttracker/app/flightTracker.dll
+Restart=always
+RestartSec=15
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=flighttracker
+
+[Install]
+WantedBy=multi-user.target

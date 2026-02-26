@@ -8,6 +8,14 @@ public sealed class AppSettings
     public TelegramSettings Telegram { get; set; } = new();
     public AnthropicSettings Anthropic { get; set; } = new();
     public MapboxSettings Mapbox { get; set; } = new();
+
+    /// <summary>
+    /// Path to the SQLite database file. Relative paths are resolved from the
+    /// working directory (project root when running with `dotnet run`, or
+    /// WorkingDirectory in the systemd service file on EC2).
+    /// Default: "data/flight_stats.db"
+    /// </summary>
+    public string DatabasePath { get; set; } = "data/flight_stats.db";
 }
 
 public sealed class HomeLocationSettings

@@ -1,3 +1,4 @@
+using FlightTracker.Configuration;
 using FlightTracker.Models;
 using Microsoft.Data.Sqlite;
 
@@ -6,11 +7,19 @@ namespace FlightTracker.Data;
 public sealed class SqliteFlightLoggingService : IFlightLoggingService
 {
     private readonly string _connectionString;
+    private readonly string _dbPath;
 
-    public SqliteFlightLoggingService()
+    public SqliteFlightLoggingService(AppSettings settings)
     {
-        string dbPath = Path.Combine(AppContext.BaseDirectory, "flight_stats.db");
-        _connectionString = $"Data Source={dbPath}";
+        // Resolve relative paths from the working directory so the DB stays at a
+        // stable location (project root locally; /opt/flighttracker on EC2).
+        string rawPath = settings.DatabasePath;
+        _dbPath = Path.IsPathRooted(rawPath)
+            ? rawPath
+            : Path.Combine(Directory.GetCurrentDirectory(), rawPath);
+
+        Directory.CreateDirectory(Path.GetDirectoryName(_dbPath)!);
+        _connectionString = $"Data Source={_dbPath}";
     }
 
     // ── Schema ────────────────────────────────────────────────────────────────
@@ -51,7 +60,7 @@ public sealed class SqliteFlightLoggingService : IFlightLoggingService
             """;
         await cmd.ExecuteNonQueryAsync(cancellationToken);
 
-        Console.WriteLine($"[FlightLog] Database ready: flight_stats.db");
+        Console.WriteLine($"[FlightLog] Database ready: {_dbPath}");
     }
 
     // ── Write ─────────────────────────────────────────────────────────────────
