@@ -195,12 +195,13 @@ The database is never deleted automatically — it accumulates over time. You ca
 
 ## Deploying to EC2
 
-The app runs as a systemd service on a Linux EC2 instance. Two scripts handle the full lifecycle:
+The app runs as a systemd service on a Linux EC2 instance. Three scripts handle the full lifecycle:
 
 | Script | Where to run | When to use |
 |--------|-------------|-------------|
 | `ec2-setup.sh` | On EC2 | First-time setup only |
-| `deploy.sh` | Local machine | Every subsequent update |
+| `redeploy.sh` | On EC2 | Pull latest code and restart while SSHed in |
+| `deploy.sh` | Local machine | Push an update without SSHing in |
 
 ### First-time setup (run on EC2)
 
@@ -226,13 +227,19 @@ cd /home/ec2-user/flight-tracker
 scp /path/to/flight_stats.db user@your-ec2:/opt/flighttracker/data/
 ```
 
-### Subsequent updates (run from local machine)
+### Subsequent updates
 
+**From EC2** (while already SSHed in):
+```bash
+cd /home/ec2-user/flight-tracker && ./redeploy.sh
+```
+
+**From your local machine** (no SSH needed):
 ```bash
 EC2_HOST=user@your-ec2-ip ./deploy.sh
 ```
 
-Skips config and does `git pull → dotnet publish → systemctl restart`. Warns and offers to re-run config if placeholder values are detected.
+Both do `git pull → dotnet publish → systemctl restart` and warn if config placeholders are detected.
 
 ### Useful commands on EC2
 
@@ -263,6 +270,7 @@ flightTracker/
 ├── Display/FlightTableRenderer.cs    # Terminal UI (Spectre.Console)
 ├── appsettings.example.json       # Config template
 ├── ec2-setup.sh                   # One-time EC2 setup (run on EC2)
-├── deploy.sh                      # Subsequent updates (run from local machine)
+├── redeploy.sh                    # Pull + restart while SSHed into EC2
+├── deploy.sh                      # Push updates from local machine (no SSH needed)
 └── flighttracker.service          # systemd unit file
 ```
