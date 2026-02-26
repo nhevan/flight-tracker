@@ -38,6 +38,9 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
             return;
         }
 
+        // Clear any stale webhook — Telegram forbids simultaneous webhook + long-polling (causes 409)
+        await DeleteWebhookAsync(cancellationToken);
+
         long offset = 0;
         Console.WriteLine("[TelegramListener] Listening for commands (\"stats\" or \"/stats\")...");
 
@@ -71,11 +74,36 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
             {
                 break;
             }
+            catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Conflict)
+            {
+                // 409: webhook still active or another instance is polling
+                Console.WriteLine("[TelegramListener] 409 Conflict — another instance may be running " +
+                                  "or a webhook is still active. Clearing webhook and retrying in 30s...");
+                await DeleteWebhookAsync(cancellationToken);
+                try { await Task.Delay(30_000, cancellationToken); } catch { break; }
+            }
             catch (Exception ex)
             {
                 Console.WriteLine($"[TelegramListener] Error: {ex.Message} — retrying in 5s");
                 try { await Task.Delay(5_000, cancellationToken); } catch { break; }
             }
+        }
+    }
+
+    private async Task DeleteWebhookAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            string url = $"https://api.telegram.org/bot{_settings.BotToken}/deleteWebhook";
+            using var response = await _httpClient.PostAsync(url, content: null, cancellationToken);
+            if (response.IsSuccessStatusCode)
+                Console.WriteLine("[TelegramListener] Webhook cleared (long-polling ready).");
+            else
+                Console.WriteLine($"[TelegramListener] deleteWebhook returned {(int)response.StatusCode}.");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[TelegramListener] Could not clear webhook: {ex.Message}");
         }
     }
 

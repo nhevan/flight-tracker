@@ -13,10 +13,18 @@ public sealed class TelegramNotificationService : ITelegramNotificationService
 {
     private readonly TelegramSettings _settings;
     private readonly HttpClient _httpClient;
+    private readonly IMapSnapshotService _mapService;
 
-    public TelegramNotificationService(AppSettings settings, IHttpClientFactory httpClientFactory)
+    // Telegram captions are capped at 1,024 characters
+    private const int TelegramCaptionLimit = 1024;
+
+    public TelegramNotificationService(
+        AppSettings settings,
+        IHttpClientFactory httpClientFactory,
+        IMapSnapshotService mapService)
     {
-        _settings = settings.Telegram;
+        _settings   = settings.Telegram;
+        _mapService = mapService;
         _httpClient = httpClientFactory.CreateClient("telegram");
         _httpClient.Timeout = TimeSpan.FromSeconds(10);
     }
@@ -34,37 +42,78 @@ public sealed class TelegramNotificationService : ITelegramNotificationService
 
         try
         {
+            var f    = flight.State;
             string text = BuildMessage(flight, direction, etaSeconds);
-            string? photoUrl = flight.PhotoUrl;
+
+            // 1️⃣ Try to get a live map snapshot (fetched server-side to keep token private)
+            byte[]? mapBytes = await _mapService.GetSnapshotAsync(
+                f.Latitude, f.Longitude, f.HeadingDegrees,
+                f.BarometricAltitudeMeters, cancellationToken);
 
             string apiUrl;
-            object payload;
+            HttpContent requestContent;
 
-            if (!string.IsNullOrEmpty(photoUrl))
+            string truncatedText = text.Length > TelegramCaptionLimit
+                ? text[..(TelegramCaptionLimit - 1)] + "…"
+                : text;
+
+            if (mapBytes is not null && !string.IsNullOrEmpty(flight.PhotoUrl))
             {
-                // Send photo with caption when we have an aircraft image
-                apiUrl  = $"https://api.telegram.org/bot{_settings.BotToken}/sendPhoto";
-                payload = new
+                // Both map and aircraft photo — send as a 2-photo album via sendMediaGroup.
+                // Caption goes on the first item (the map); aircraft photo is second, captionless.
+                apiUrl = $"https://api.telegram.org/bot{_settings.BotToken}/sendMediaGroup";
+
+                var mediaArray = System.Text.Json.JsonSerializer.Serialize(new object[]
                 {
-                    chat_id     = _settings.ChatId,
-                    photo       = photoUrl,
-                    caption     = text,
-                    parse_mode  = "HTML"
+                    new { type = "photo", media = "attach://map", caption = truncatedText, parse_mode = "HTML" },
+                    new { type = "photo", media = flight.PhotoUrl }
+                });
+
+                var form = new MultipartFormDataContent();
+                form.Add(new StringContent(_settings.ChatId), "chat_id");
+                form.Add(new StringContent(mediaArray),        "media");
+                form.Add(new ByteArrayContent(mapBytes),       "map", "map.png");
+                requestContent = form;
+            }
+            else if (mapBytes is not null)
+            {
+                // Map only — upload as multipart/form-data so the Mapbox token stays private
+                apiUrl = $"https://api.telegram.org/bot{_settings.BotToken}/sendPhoto";
+
+                var form = new MultipartFormDataContent();
+                form.Add(new StringContent(_settings.ChatId),  "chat_id");
+                form.Add(new ByteArrayContent(mapBytes),        "photo", "map.png");
+                form.Add(new StringContent(truncatedText),      "caption");
+                form.Add(new StringContent("HTML"),             "parse_mode");
+                requestContent = form;
+            }
+            else if (!string.IsNullOrEmpty(flight.PhotoUrl))
+            {
+                // No map but planespotters photo available — URL-based sendPhoto (existing behaviour)
+                apiUrl = $"https://api.telegram.org/bot{_settings.BotToken}/sendPhoto";
+                var payload = new
+                {
+                    chat_id    = _settings.ChatId,
+                    photo      = flight.PhotoUrl,
+                    caption    = text,
+                    parse_mode = "HTML"
                 };
+                requestContent = JsonContent.Create(payload);
             }
             else
             {
-                // Fall back to plain text message when no photo is available
-                apiUrl  = $"https://api.telegram.org/bot{_settings.BotToken}/sendMessage";
-                payload = new
+                // No photo of any kind — plain text message
+                apiUrl = $"https://api.telegram.org/bot{_settings.BotToken}/sendMessage";
+                var payload = new
                 {
                     chat_id    = _settings.ChatId,
                     text,
                     parse_mode = "HTML"
                 };
+                requestContent = JsonContent.Create(payload);
             }
 
-            using var response = await _httpClient.PostAsJsonAsync(apiUrl, payload, cancellationToken);
+            using var response = await _httpClient.PostAsync(apiUrl, requestContent, cancellationToken);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -104,16 +153,16 @@ public sealed class TelegramNotificationService : ITelegramNotificationService
         // Aircraft: "B789 / PH-BHO (Wide-body Jet)" or just type/reg if partial
         string aircraft = BuildAircraftString(ef.Aircraft);
 
-        string dist    = f.DistanceKm.HasValue
+        string dist  = f.DistanceKm.HasValue
             ? f.DistanceKm.Value.ToString("F1", CultureInfo.InvariantCulture) + " km"
             : "?";
-        string alt     = f.BarometricAltitudeMeters.HasValue
+        string alt   = f.BarometricAltitudeMeters.HasValue
             ? f.BarometricAltitudeMeters.Value.ToString("F0", CultureInfo.InvariantCulture) + " m"
             : "?";
-        string speed   = f.VelocityMetersPerSecond.HasValue
+        string speed = f.VelocityMetersPerSecond.HasValue
             ? (f.VelocityMetersPerSecond.Value * 3.6).ToString("F0", CultureInfo.InvariantCulture) + " km/h"
             : "?";
-        string eta     = FormatEta(etaSeconds);
+        string eta   = FormatEta(etaSeconds);
 
         string message =
                $"{dirEmoji} <b>{EscapeHtml(callsign)}</b> — {direction}\n" +

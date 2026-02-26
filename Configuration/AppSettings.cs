@@ -7,6 +7,7 @@ public sealed class AppSettings
     public OpenSkySettings OpenSky { get; set; } = new();
     public TelegramSettings Telegram { get; set; } = new();
     public AnthropicSettings Anthropic { get; set; } = new();
+    public MapboxSettings Mapbox { get; set; } = new();
 }
 
 public sealed class HomeLocationSettings
@@ -68,4 +69,18 @@ public sealed class AnthropicSettings
 
     /// <summary>Maximum tokens in the AI response. 200 is plenty for 2-3 sentences of facts.</summary>
     public int MaxTokens { get; set; } = 200;
+}
+
+public sealed class MapboxSettings
+{
+    /// <summary>Set to true to include a live map image in Telegram notifications.</summary>
+    public bool Enabled { get; set; } = false;
+
+    /// <summary>Mapbox access token (get from account.mapbox.com).</summary>
+    public string AccessToken { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Mapbox map style. Options: mapbox/dark-v11 (default), mapbox/satellite-v9, mapbox/streets-v12
+    /// </summary>
+    public string Style { get; set; } = "mapbox/dark-v11";
 }

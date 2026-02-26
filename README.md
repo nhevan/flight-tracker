@@ -117,6 +117,24 @@ Notifications fire when a flight is ≤ 2 minutes from its closest point to your
 
 When enabled, each Telegram notification includes a short paragraph of interesting facts about the aircraft type — approximate seat count, year it entered service, and primary uses. Facts are **cached per aircraft type** for the session (e.g. all Boeing 787s share one lookup), so API calls are minimal.
 
+### Mapbox (Live Map)
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `Enabled` | `false` | Set to `true` to include a live map image in each Telegram notification |
+| `AccessToken` | — | Mapbox access token (get from [account.mapbox.com](https://account.mapbox.com)) |
+| `Style` | `mapbox/dark-v11` | Map style — also supports `mapbox/satellite-v9` and `mapbox/streets-v12` |
+
+When enabled, each Telegram notification includes a `600×400` static map showing the aircraft's position (red pin) and heading trajectory (orange line). Zoom level adjusts automatically with altitude:
+
+| Altitude | Zoom | View |
+|----------|------|------|
+| > 30,000 ft (9,144 m) | 9 | Regional — shows the flight route |
+| 10,000–30,000 ft | 11 | City-level — climbing or descending |
+| < 10,000 ft (3,048 m) | 13 | Neighbourhood — low fly-by close-up |
+
+The map is fetched server-side so the Mapbox token is never exposed to Telegram. If the map request fails, the notification falls back to the aircraft photo or plain text.
+
 ## Terminal Display
 
 The table updates every poll and shows:

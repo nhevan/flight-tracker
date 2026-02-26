@@ -36,6 +36,7 @@ services.AddSingleton<IFlightRouteService, FlightRouteService>();
 services.AddSingleton<IAircraftInfoService, HexDbService>();
 services.AddSingleton<IAircraftPhotoService, PlaneSpottersPhotoService>();
 services.AddSingleton<IAircraftFactsService, AnthropicAircraftFactsService>();
+services.AddSingleton<IMapSnapshotService, MapboxSnapshotService>();
 services.AddSingleton<IFlightEnrichmentService, FlightEnrichmentService>();
 services.AddSingleton<ITelegramNotificationService, TelegramNotificationService>();
 services.AddSingleton<IFlightLoggingService, SqliteFlightLoggingService>();
