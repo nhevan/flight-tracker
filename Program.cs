@@ -165,7 +165,7 @@ while (!cts.Token.IsCancellationRequested)
             settings.HomeLocation.VisualRangeKm,
             DateTimeOffset.Now);
     }
-    catch (OperationCanceledException)
+    catch (OperationCanceledException) when (cts.Token.IsCancellationRequested)
     {
         break;
     }
