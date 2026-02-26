@@ -6,14 +6,14 @@
 #
 # One-time EC2 prerequisites (run manually once — see flighttracker.service):
 #   1. Install .NET SDK: https://learn.microsoft.com/dotnet/core/install/linux
-#   2. Clone repo:  git clone git@github.com:nhevan/flight-tracker.git /opt/flighttracker/repo
-#   3. Install service: sudo cp /opt/flighttracker/repo/flighttracker.service /etc/systemd/system/
+#   2. Repo already cloned at: /home/ec2-user/flight-tracker
+#   3. Install service: sudo cp /home/ec2-user/flight-tracker/flighttracker.service /etc/systemd/system/
 #                       sudo systemctl daemon-reload && sudo systemctl enable flighttracker
 #   4. (Optional) seed DB: scp flight_stats.db user@ec2:/opt/flighttracker/data/
 set -euo pipefail
 
 EC2_HOST="${EC2_HOST:?Please set EC2_HOST=user@your-ec2-ip}"
-REPO_DIR="/opt/flighttracker/repo"
+REPO_DIR="/home/ec2-user/flight-tracker"
 APP_DIR="/opt/flighttracker/app"
 DATA_DIR="/opt/flighttracker/data"
 

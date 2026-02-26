@@ -125,13 +125,13 @@ When enabled, each Telegram notification includes a short paragraph of interesti
 | `AccessToken` | — | Mapbox access token (get from [account.mapbox.com](https://account.mapbox.com)) |
 | `Style` | `mapbox/dark-v11` | Map style — also supports `mapbox/satellite-v9` and `mapbox/streets-v12` |
 
-When enabled, each Telegram notification includes a `600×400` static map showing the aircraft's position (red pin) and heading trajectory (orange line). Zoom level adjusts automatically with altitude:
+When enabled, each Telegram notification includes a `600×400` static map centred on your home location, showing the aircraft's position (red pin), your home (blue pin), and the flight's heading trajectory (orange line). The map is only sent when ADS-B heading data is available. Zoom level adjusts automatically based on the aircraft's distance from home:
 
-| Altitude | Zoom | View |
-|----------|------|------|
-| > 30,000 ft (9,144 m) | 9 | Regional — shows the flight route |
-| 10,000–30,000 ft | 11 | City-level — climbing or descending |
-| < 10,000 ft (3,048 m) | 13 | Neighbourhood — low fly-by close-up |
+| Distance from home | Zoom | View width |
+|--------------------|------|------------|
+| > 13 km | 9 | ~113 km — wide regional view |
+| 3–13 km | 11 | ~28 km — city-level |
+| < 3 km | 13 | ~7 km — neighbourhood close-up |
 
 The map is fetched server-side so the Mapbox token is never exposed to Telegram. If the map request fails, the notification falls back to the aircraft photo or plain text.
 
@@ -157,7 +157,7 @@ The table updates every poll and shows:
 
 ## Flight Stats
 
-Every time a Telegram notification fires, the sighting is logged to a local SQLite database (`flight_stats.db` in the app's output directory). Send **`stats`** or **`/stats`** to the Telegram bot at any time to get a summary:
+Every time a Telegram notification fires, the sighting is logged to a SQLite database. The path defaults to `data/flight_stats.db` relative to the working directory and is configurable via `DatabasePath` in `appsettings.json`. Send **`stats`** or **`/stats`** to the Telegram bot at any time to get a summary:
 
 ```
 📊 Flight Tracker Stats
@@ -192,6 +192,59 @@ The database is never deleted automatically — it accumulates over time. You ca
 | [hexdb.io](https://hexdb.io) | Aircraft type, registration, operator | None |
 | [planespotters.net](https://www.planespotters.net) | Aircraft photos | None |
 | [Anthropic API](https://www.anthropic.com) | AI-generated aircraft facts | API key |
+
+## Deploying to EC2
+
+The app runs as a systemd service on a Linux EC2 instance. Deployment is git-based — the server pulls and republishes from the repo on each deploy.
+
+### One-time EC2 setup
+
+```bash
+# 1. Install .NET SDK (https://learn.microsoft.com/dotnet/core/install/linux)
+
+# 2. Create the app and data directories
+sudo mkdir -p /opt/flighttracker/app /opt/flighttracker/data
+sudo chown -R $USER: /opt/flighttracker
+
+# 3. Install the systemd service
+sudo cp /home/ec2-user/flight-tracker/flighttracker.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable flighttracker
+
+# 4. (Optional) seed historical data from your local machine
+scp /path/to/flight_stats.db user@your-ec2:/opt/flighttracker/data/
+```
+
+### Deploying
+
+From your local machine, run:
+
+```bash
+EC2_HOST=user@your-ec2-ip ./deploy.sh
+```
+
+**First run:** detects that `appsettings.json` is missing on EC2 and walks through interactive prompts to create it (home coordinates, OpenSky credentials, and optional Telegram / Anthropic / Mapbox tokens). Config is written directly to the server — API keys never touch the repo.
+
+**Every subsequent run:** skips config and just does `git pull → dotnet publish → systemctl restart`.
+
+If placeholder values are still in the config (e.g. after a manual edit gone wrong), the script warns and offers to re-run setup.
+
+### Useful commands on EC2
+
+```bash
+# Check service status
+sudo systemctl status flighttracker
+
+# Tail live logs
+journalctl -u flighttracker -f
+
+# Restart manually
+sudo systemctl restart flighttracker
+
+# Update config in place
+nano /opt/flighttracker/app/appsettings.json
+sudo systemctl restart flighttracker
+```
 
 ## Project Structure
 
