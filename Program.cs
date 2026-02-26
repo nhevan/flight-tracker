@@ -64,11 +64,18 @@ Console.CancelKeyPress += (_, e) =>
 };
 
 // SIGTERM — sent when the terminal window is closed, the parent process dies,
-// or the OS / Docker / systemd asks the process to stop
+// or the OS / Docker / systemd asks the process to stop.
+// On Linux, ProcessExit fires twice: once on SIGTERM, and again when the CLR
+// shuts down after Main returns. By the second firing, cts is already disposed,
+// so we guard against ObjectDisposedException to prevent an ABRT crash-loop.
 AppDomain.CurrentDomain.ProcessExit += (_, _) =>
 {
-    if (!cts.IsCancellationRequested)
-        cts.Cancel();
+    try
+    {
+        if (!cts.IsCancellationRequested)
+            cts.Cancel();
+    }
+    catch (ObjectDisposedException) { }
 };
 
 // ── Initialise database ───────────────────────────────────────────────────────
