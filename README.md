@@ -1,6 +1,6 @@
 # Flight Tracker
 
-A .NET 10 console app that monitors aircraft flying over your home in real time. It displays a live terminal table with flight data and sends Telegram notifications when a low-altitude aircraft is approaching overhead.
+A .NET 9 console app that monitors aircraft flying over your home in real time. It displays a live terminal table with flight data and sends Telegram notifications when a low-altitude aircraft is approaching overhead.
 
 ## Features
 
@@ -13,7 +13,7 @@ A .NET 10 console app that monitors aircraft flying over your home in real time.
 
 ## Prerequisites
 
-- [.NET 10 SDK](https://dotnet.microsoft.com/download)
+- [.NET 9 SDK](https://dotnet.microsoft.com/download/dotnet/9.0)
 - An [OpenSky Network](https://opensky-network.org) account with API credentials
 - (Optional) A Telegram bot token and chat ID for notifications
 
@@ -200,7 +200,7 @@ The app runs as a systemd service on a Linux EC2 instance. Deployment is git-bas
 ### One-time EC2 setup
 
 ```bash
-# 1. Install .NET SDK (https://learn.microsoft.com/dotnet/core/install/linux)
+# 1. Install .NET 9 SDK (https://learn.microsoft.com/dotnet/core/install/linux)
 
 # 2. Install the systemd service
 sudo cp /home/ec2-user/flight-tracker/flighttracker.service /etc/systemd/system/
