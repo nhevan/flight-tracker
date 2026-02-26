@@ -28,7 +28,7 @@ public sealed class OpenSkyService : IFlightService
 
         _apiClient = httpClientFactory.CreateClient("opensky-api");
         _apiClient.BaseAddress = new Uri(settings.OpenSky.BaseUrl);
-        _apiClient.Timeout = TimeSpan.FromSeconds(15);
+        _apiClient.Timeout = TimeSpan.FromSeconds(30);
     }
 
     public async Task<IReadOnlyList<FlightState>> GetOverheadFlightsAsync(
