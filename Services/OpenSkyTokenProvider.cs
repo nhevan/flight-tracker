@@ -22,7 +22,7 @@ public sealed class OpenSkyTokenProvider : IOpenSkyTokenProvider
     {
         _settings = settings;
         _authClient = httpClientFactory.CreateClient("opensky-auth");
-        _authClient.Timeout = TimeSpan.FromSeconds(15);
+        _authClient.Timeout = TimeSpan.FromSeconds(30);
     }
 
     public void Invalidate()
