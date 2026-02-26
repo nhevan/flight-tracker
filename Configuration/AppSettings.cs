@@ -6,6 +6,7 @@ public sealed class AppSettings
     public PollingSettings Polling { get; set; } = new();
     public OpenSkySettings OpenSky { get; set; } = new();
     public TelegramSettings Telegram { get; set; } = new();
+    public AnthropicSettings Anthropic { get; set; } = new();
 }
 
 public sealed class HomeLocationSettings
@@ -52,4 +53,19 @@ public sealed class TelegramSettings
 
     /// <summary>Only notify for flights at or below this barometric altitude (metres). Default 3000 m.</summary>
     public double MaxAltitudeMeters { get; set; } = 3000.0;
+}
+
+public sealed class AnthropicSettings
+{
+    /// <summary>Set to true to enable AI-generated aircraft facts in Telegram messages.</summary>
+    public bool Enabled { get; set; } = false;
+
+    /// <summary>Anthropic API key (get from console.anthropic.com).</summary>
+    public string ApiKey { get; set; } = string.Empty;
+
+    /// <summary>Model to use. Defaults to claude-haiku-4-5 for speed and low cost.</summary>
+    public string Model { get; set; } = "claude-haiku-4-5";
+
+    /// <summary>Maximum tokens in the AI response. 200 is plenty for 2-3 sentences of facts.</summary>
+    public int MaxTokens { get; set; } = 200;
 }

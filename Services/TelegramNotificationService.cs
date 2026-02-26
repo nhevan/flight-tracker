@@ -115,10 +115,16 @@ public sealed class TelegramNotificationService : ITelegramNotificationService
             : "?";
         string eta     = FormatEta(etaSeconds);
 
-        return $"{dirEmoji} <b>{EscapeHtml(callsign)}</b> — {direction}\n" +
+        string message =
+               $"{dirEmoji} <b>{EscapeHtml(callsign)}</b> — {direction}\n" +
                $"Route: {EscapeHtml(route)}\n" +
                $"Aircraft: {EscapeHtml(aircraft)}\n" +
                $"Distance: {dist} | Alt: {alt} | Speed: {speed} | Overhead in: {eta}";
+
+        if (!string.IsNullOrWhiteSpace(ef.AircraftFacts))
+            message += $"\n\n✈️ {EscapeHtml(ef.AircraftFacts)}";
+
+        return message;
     }
 
     private static string FormatEta(double? etaSeconds)

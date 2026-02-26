@@ -8,6 +8,7 @@ A .NET 10 console app that monitors aircraft flying over your home in real time.
 - Distance, route, aircraft type, altitude, speed, heading, and ETA to closest approach
 - Audible alert (bell) when a new flight enters the area
 - Telegram notifications (with aircraft photo) when a flight is ≤ 2 minutes from overhead and below your altitude threshold
+- Optional AI-generated aircraft facts in Telegram messages (seat count, year introduced, primary uses) via Anthropic API
 - Graceful shutdown on Ctrl+C or terminal close
 
 ## Prerequisites
@@ -55,6 +56,12 @@ All settings live in `appsettings.json` (gitignored — never committed).
     "BotToken": "YOUR_BOT_TOKEN",
     "ChatId": "YOUR_CHAT_ID",
     "MaxAltitudeMeters": 3000
+  },
+  "Anthropic": {
+    "Enabled": false,
+    "ApiKey": "YOUR_ANTHROPIC_API_KEY",
+    "Model": "claude-haiku-4-5",
+    "MaxTokens": 200
   }
 }
 ```
@@ -99,6 +106,17 @@ Register at [opensky-network.org](https://opensky-network.org) to get credential
 
 Notifications fire when a flight is ≤ 2 minutes from its closest point to your home **and** at or below `MaxAltitudeMeters`. A photo of the aircraft (from [planespotters.net](https://www.planespotters.net)) is included when available.
 
+### Anthropic (AI Facts)
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `Enabled` | `false` | Set to `true` to append AI-generated facts to Telegram messages |
+| `ApiKey` | — | Anthropic API key (get from [console.anthropic.com](https://console.anthropic.com)) |
+| `Model` | `claude-haiku-4-5` | Model to use — Haiku is fast and cheap for short fact lookups |
+| `MaxTokens` | `200` | Maximum tokens in the AI response |
+
+When enabled, each Telegram notification includes a short paragraph of interesting facts about the aircraft type — approximate seat count, year it entered service, and primary uses. Facts are **cached per aircraft type** for the session (e.g. all Boeing 787s share one lookup), so API calls are minimal.
+
 ## Terminal Display
 
 The table updates every poll and shows:
@@ -127,6 +145,7 @@ The table updates every poll and shows:
 | [adsbdb.com](https://www.adsbdb.com) | Flight route (origin/destination) | None |
 | [hexdb.io](https://hexdb.io) | Aircraft type, registration, operator | None |
 | [planespotters.net](https://www.planespotters.net) | Aircraft photos | None |
+| [Anthropic API](https://www.anthropic.com) | AI-generated aircraft facts | API key |
 
 ## Project Structure
 

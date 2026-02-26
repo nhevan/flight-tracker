@@ -7,15 +7,18 @@ public sealed class FlightEnrichmentService : IFlightEnrichmentService
     private readonly IFlightRouteService _routeService;
     private readonly IAircraftInfoService _aircraftInfoService;
     private readonly IAircraftPhotoService _photoService;
+    private readonly IAircraftFactsService _factsService;
 
     public FlightEnrichmentService(
         IFlightRouteService routeService,
         IAircraftInfoService aircraftInfoService,
-        IAircraftPhotoService photoService)
+        IAircraftPhotoService photoService,
+        IAircraftFactsService factsService)
     {
         _routeService        = routeService;
         _aircraftInfoService = aircraftInfoService;
         _photoService        = photoService;
+        _factsService        = factsService;
     }
 
     public async Task<IReadOnlyList<EnrichedFlightState>> EnrichAsync(
@@ -40,17 +43,19 @@ public sealed class FlightEnrichmentService : IFlightEnrichmentService
 
         AircraftInfo? aircraft = aircraftTask.Result;
 
-        // Photo lookup: try hex first, fall back to registration inside the service.
-        // We await aircraft first so we can pass the registration for the fallback.
-        string? photoUrl = await _photoService.GetPhotoUrlAsync(
-            flight.Icao24,
-            aircraft?.Registration,
-            cancellationToken);
+        // Photo and AI facts are both independent after aircraft info is ready — run in parallel.
+        var photoTask = _photoService.GetPhotoUrlAsync(
+            flight.Icao24, aircraft?.Registration, cancellationToken);
+        var factsTask = _factsService.GetFactsAsync(
+            aircraft?.TypeCode, aircraft?.Category, cancellationToken);
+
+        await Task.WhenAll(photoTask, factsTask);
 
         return new EnrichedFlightState(
-            State:    flight,
-            Route:    routeTask.Result,
-            Aircraft: aircraft,
-            PhotoUrl: photoUrl);
+            State:         flight,
+            Route:         routeTask.Result,
+            Aircraft:      aircraft,
+            PhotoUrl:      photoTask.Result,
+            AircraftFacts: factsTask.Result);
     }
 }
