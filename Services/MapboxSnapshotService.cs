@@ -141,24 +141,63 @@ public sealed class MapboxSnapshotService : IMapSnapshotService
         double latBwd = planeLat - (halfKm / 111.0) * Math.Cos(headingRad);
         double lonBwd = planeLon - (halfKm / 111.0) * Math.Sin(headingRad) / cosLat;
 
-        // 3-point LineString: behind the plane → current position → ahead of the plane
+        // Arrowhead triangle at the forward tip — size scales with halfKm so it looks
+        // consistent across all zoom levels
+        double arrowDepthKm = halfKm * 0.25;   // how far back from tip to the base
+        double arrowHalfW   = halfKm * 0.15;   // half-width of the arrow base
+        double perpRad      = headingRad + Math.PI / 2.0;
+
+        double latBase  = latFwd - (arrowDepthKm / 111.0) * Math.Cos(headingRad);
+        double lonBase  = lonFwd - (arrowDepthKm / 111.0) * Math.Sin(headingRad) / cosLat;
+
+        double latRight = latBase + (arrowHalfW / 111.0) * Math.Cos(perpRad);
+        double lonRight = lonBase + (arrowHalfW / 111.0) * Math.Sin(perpRad) / cosLat;
+
+        double latLeft  = latBase - (arrowHalfW / 111.0) * Math.Cos(perpRad);
+        double lonLeft  = lonBase - (arrowHalfW / 111.0) * Math.Sin(perpRad) / cosLat;
+
+        // FeatureCollection: trajectory LineString + arrowhead Polygon at the forward tip
         var geoJson = new
         {
-            type = "Feature",
-            properties = new
+            type = "FeatureCollection",
+            features = new object[]
             {
-                stroke         = "#ffaa00",
-                @stroke_width  = 3,
-                stroke_opacity = 0.9
-            },
-            geometry = new
-            {
-                type        = "LineString",
-                coordinates = new[]
+                // Orange trajectory line: behind → plane → ahead
+                new
                 {
-                    new[] { lonBwd,   latBwd   },   // behind
-                    new[] { planeLon, planeLat },   // plane now
-                    new[] { lonFwd,   latFwd   }    // ahead
+                    type       = "Feature",
+                    properties = new { stroke = "#ffaa00", stroke_width = 3, stroke_opacity = 0.9 },
+                    geometry   = new
+                    {
+                        type        = "LineString",
+                        coordinates = new[]
+                        {
+                            new[] { lonBwd,   latBwd   },   // behind
+                            new[] { planeLon, planeLat },   // plane now
+                            new[] { lonFwd,   latFwd   }    // ahead
+                        }
+                    }
+                },
+                // Filled arrowhead triangle pointing in the direction of travel
+                new
+                {
+                    type       = "Feature",
+                    properties = new { fill = "#ffaa00", fill_opacity = 0.9,
+                                       stroke = "#ffaa00", stroke_width = 1, stroke_opacity = 0.9 },
+                    geometry   = new
+                    {
+                        type        = "Polygon",
+                        coordinates = new[]
+                        {
+                            new[]
+                            {
+                                new[] { lonFwd,   latFwd   },   // tip
+                                new[] { lonRight, latRight },   // right base corner
+                                new[] { lonLeft,  latLeft  },   // left base corner
+                                new[] { lonFwd,   latFwd   }    // close ring
+                            }
+                        }
+                    }
                 }
             }
         };
@@ -168,7 +207,8 @@ public sealed class MapboxSnapshotService : IMapSnapshotService
 
         // JsonSerializer writes underscores; Mapbox GeoJSON spec requires hyphens
         geoJsonStr = geoJsonStr.Replace("stroke_width",   "stroke-width")
-                               .Replace("stroke_opacity", "stroke-opacity");
+                               .Replace("stroke_opacity", "stroke-opacity")
+                               .Replace("fill_opacity",   "fill-opacity");
 
         string encodedGeoJson = Uri.EscapeDataString(geoJsonStr);
 
