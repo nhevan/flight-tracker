@@ -201,16 +201,41 @@ public sealed class TelegramNotificationService : ITelegramNotificationService
         }
 
         // ── Route line ───────────────────────────────────────────────────────
-        string routePart = (ef.Route?.OriginIata ?? ef.Route?.OriginIcao,
-                            ef.Route?.DestIata   ?? ef.Route?.DestIcao) switch
+        if (ef.Route?.OriginIata is not null || ef.Route?.OriginIcao is not null
+            || ef.Route?.DestIata is not null || ef.Route?.DestIcao  is not null)
         {
-            (string dep, string arr) => $"{dep} → {arr}",
-            _                        => "Unknown route"
-        };
-        string distRoute = ef.Route?.RouteDistanceKm.HasValue == true
-            ? $" ({ef.Route.RouteDistanceKm.Value:N0} km)"
-            : string.Empty;
-        sb.AppendLine($"Route: {EscapeHtml(routePart)}{distRoute}");
+            string originCode = ef.Route!.OriginIata ?? ef.Route.OriginIcao ?? "?";
+            string destCode   = ef.Route.DestIata    ?? ef.Route.DestIcao   ?? "?";
+
+            // Prefer full airport name; fall back to code alone
+            string originLabel = string.IsNullOrEmpty(ef.Route.OriginName)
+                ? originCode
+                : $"{ef.Route.OriginName} ({originCode})";
+            string destLabel = string.IsNullOrEmpty(ef.Route.DestName)
+                ? destCode
+                : $"{ef.Route.DestName} ({destCode})";
+
+            // ETA to destination: remaining straight-line distance ÷ current speed
+            string etaToDest = string.Empty;
+            if (ef.Route.DestLat.HasValue && ef.Route.DestLon.HasValue
+                && f.Latitude.HasValue    && f.Longitude.HasValue
+                && f.VelocityMetersPerSecond is > 0)
+            {
+                double remainKm = Haversine.DistanceKm(
+                    f.Latitude.Value,       f.Longitude.Value,
+                    ef.Route.DestLat.Value, ef.Route.DestLon.Value);
+                double etaMins = remainKm * 1000.0 / f.VelocityMetersPerSecond.Value / 60.0;
+                etaToDest = etaMins < 60
+                    ? $" · arriving in ~{(int)Math.Round(etaMins)} mins"
+                    : $" · arriving in ~{(int)(etaMins / 60)}h {(int)(etaMins % 60)}m";
+            }
+
+            sb.AppendLine(EscapeHtml($"{originLabel} → {destLabel}{etaToDest}"));
+        }
+        else
+        {
+            sb.AppendLine("Unknown route");
+        }
 
         // ── Aircraft line ────────────────────────────────────────────────────
         sb.AppendLine(EscapeHtml(BuildAircraftString(f.AircraftDescription, ef.Aircraft)));
