@@ -119,6 +119,18 @@ while (!cts.Token.IsCancellationRequested)
 {
     try
     {
+        // Apply a /spot command that arrived since the last poll
+        if (settings.HomeLocation.LocationResetRequested)
+        {
+            settings.HomeLocation.LocationResetRequested = false;
+            previousPositions.Clear();
+            notifiedIcaos.Clear();
+            string locLabel = settings.HomeLocation.Name is { } n ? $"\"{n}\" " : "";
+            Console.WriteLine($"[Spot] Location changed to {locLabel}" +
+                              $"({settings.HomeLocation.Latitude:F6}, {settings.HomeLocation.Longitude:F6})" +
+                              " — state reset.");
+        }
+
         var flights     = await flightService.GetOverheadFlightsAsync(cts.Token);
         var rawEnriched = await enrichmentService.EnrichAsync(flights, cts.Token);
 

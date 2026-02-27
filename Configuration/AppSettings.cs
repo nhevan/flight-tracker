@@ -22,6 +22,13 @@ public sealed class HomeLocationSettings
 {
     public double Latitude { get; set; }
     public double Longitude { get; set; }
+
+    /// <summary>
+    /// Optional human-readable name for this spotting location (e.g. "Home", "Roof terrace").
+    /// Not read from appsettings.json — set at runtime by the /spot Telegram command.
+    /// </summary>
+    public string? Name { get; set; }
+
     public double BoundingBoxDegrees { get; set; } = 1.0;
 
     /// <summary>
@@ -30,6 +37,13 @@ public sealed class HomeLocationSettings
     /// A typical visual range on a clear day is 30–50 km.
     /// </summary>
     public double VisualRangeKm { get; set; } = 50.0;
+
+    /// <summary>
+    /// Set to true by the /spot Telegram command. The main polling loop reads and
+    /// clears this flag each cycle to reset previousPositions and notifiedIcaos so
+    /// planes near the new location trigger fresh notifications.
+    /// </summary>
+    public bool LocationResetRequested { get; set; }
 }
 
 public sealed class PollingSettings

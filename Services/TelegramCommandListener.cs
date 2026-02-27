@@ -15,6 +15,7 @@ namespace FlightTracker.Services;
 public sealed class TelegramCommandListener : ITelegramCommandListener
 {
     private readonly TelegramSettings _settings;
+    private readonly HomeLocationSettings _homeLocation;
     private readonly IFlightLoggingService _loggingService;
     private readonly HttpClient _httpClient;
 
@@ -29,6 +30,7 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
         IHttpClientFactory httpClientFactory)
     {
         _settings       = settings.Telegram;
+        _homeLocation   = settings.HomeLocation;
         _loggingService = loggingService;
         _httpClient     = httpClientFactory.CreateClient("TelegramListener");
         _httpClient.Timeout = TimeSpan.FromSeconds(40); // > long-poll timeout
@@ -48,7 +50,7 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
         await DeleteWebhookAsync(cancellationToken);
 
         long offset = 0;
-        Console.WriteLine("[TelegramListener] Listening for commands (\"stats\" or \"/stats\")...");
+        Console.WriteLine("[TelegramListener] Listening for commands (/stats, /spot)...");
 
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -80,6 +82,10 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
                         text.Equals("/stats", StringComparison.OrdinalIgnoreCase))
                     {
                         await HandleStatsCommandAsync(update.Message!.Chat.Id, cancellationToken);
+                    }
+                    else if (text.StartsWith("/spot", StringComparison.OrdinalIgnoreCase))
+                    {
+                        await HandleSpotCommandAsync(update.Message!.Chat.Id, text, cancellationToken);
                     }
                 }
             }
@@ -161,6 +167,79 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
             Console.WriteLine($"[TelegramListener] Error sending stats: {ex.Message}");
         }
     }
+
+    private async Task HandleSpotCommandAsync(long chatId, string text, CancellationToken cancellationToken)
+    {
+        var ic = CultureInfo.InvariantCulture;
+
+        string[] parts = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length < 3)
+        {
+            await SendMessageAsync(chatId,
+                "Usage: /spot &lt;lat&gt; &lt;lon&gt; [name]\n" +
+                "Example: /spot 51.977 4.617 Home Garden",
+                cancellationToken);
+            return;
+        }
+
+        if (!double.TryParse(parts[1], NumberStyles.Float, ic, out double lat) || lat < -90 || lat > 90)
+        {
+            await SendMessageAsync(chatId,
+                $"❌ Invalid latitude <code>{EscapeHtml(parts[1])}</code> — must be a number between −90 and 90.",
+                cancellationToken);
+            return;
+        }
+
+        if (!double.TryParse(parts[2], NumberStyles.Float, ic, out double lon) || lon < -180 || lon > 180)
+        {
+            await SendMessageAsync(chatId,
+                $"❌ Invalid longitude <code>{EscapeHtml(parts[2])}</code> — must be a number between −180 and 180.",
+                cancellationToken);
+            return;
+        }
+
+        string? name = parts.Length > 3 ? string.Join(" ", parts[3..]) : null;
+
+        _homeLocation.Latitude             = lat;
+        _homeLocation.Longitude            = lon;
+        _homeLocation.Name                 = name;
+        _homeLocation.LocationResetRequested = true;
+
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("📍 <b>Spotting location updated</b>");
+        sb.AppendLine();
+        if (name is not null)
+            sb.AppendLine($"<b>{EscapeHtml(name)}</b>");
+        sb.AppendLine($"Lat: {lat.ToString("F6", ic)} · Lon: {lon.ToString("F6", ic)}");
+        sb.AppendLine();
+        sb.Append("Notification state reset — flights near this spot will notify fresh.");
+
+        await SendMessageAsync(chatId, sb.ToString(), cancellationToken);
+        Console.WriteLine($"[TelegramListener] /spot command: location set to ({lat:F6}, {lon:F6})" +
+                          (name is not null ? $" \"{name}\"" : ""));
+    }
+
+    private async Task SendMessageAsync(long chatId, string html, CancellationToken cancellationToken)
+    {
+        try
+        {
+            string apiUrl = $"https://api.telegram.org/bot{_settings.BotToken}/sendMessage";
+            var payload   = new { chat_id = chatId.ToString(), text = html, parse_mode = "HTML" };
+            using var response = await _httpClient.PostAsJsonAsync(apiUrl, payload, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                string body = await response.Content.ReadAsStringAsync(cancellationToken);
+                Console.WriteLine($"[TelegramListener] Failed to send message: {body}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[TelegramListener] Error sending message: {ex.Message}");
+        }
+    }
+
+    private static string EscapeHtml(string s) =>
+        s.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;");
 
     private static string FormatStatsMessage(FlightStats s)
     {
