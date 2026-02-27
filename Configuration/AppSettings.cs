@@ -4,7 +4,7 @@ public sealed class AppSettings
 {
     public HomeLocationSettings HomeLocation { get; set; } = new();
     public PollingSettings Polling { get; set; } = new();
-    public OpenSkySettings OpenSky { get; set; } = new();
+    public AirplanesLiveSettings AirplanesLive { get; set; } = new();
     public TelegramSettings Telegram { get; set; } = new();
     public AnthropicSettings Anthropic { get; set; } = new();
     public MapboxSettings Mapbox { get; set; } = new();
@@ -37,13 +37,9 @@ public sealed class PollingSettings
     public int IntervalSeconds { get; set; } = 30;
 }
 
-public sealed class OpenSkySettings
+public sealed class AirplanesLiveSettings
 {
-    public string ClientId { get; set; } = string.Empty;
-    public string ClientSecret { get; set; } = string.Empty;
-    public string BaseUrl { get; set; } = "https://opensky-network.org/api/";
-    public string TokenUrl { get; set; } =
-        "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token";
+    public string BaseUrl { get; set; } = "https://api.airplanes.live/v2/";
 }
 
 public sealed class TelegramSettings

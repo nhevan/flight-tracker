@@ -35,22 +35,39 @@ public static class Haversine
     private static double ToRad(double deg) => deg * Math.PI / 180.0;
 }
 
-// Internal: represents the raw JSON envelope from OpenSky.
-// States is JsonElement[][] because each flight is a positional heterogeneous array.
-internal sealed class OpenSkyResponse
+// Internal: represents the raw JSON envelope from airplanes.live /v2/point/{lat}/{lon}/{radius}
+internal sealed class AirplanesLiveResponse
 {
-    public long Time { get; set; }
-    public System.Text.Json.JsonElement[][]? States { get; set; }
+    [System.Text.Json.Serialization.JsonPropertyName("ac")]
+    public AirplanesLiveAircraft[]? Ac { get; set; }
 }
 
-// Internal: represents the OAuth2 token response from the OpenSky auth server.
-internal sealed class TokenResponse
+internal sealed class AirplanesLiveAircraft
 {
-    [System.Text.Json.Serialization.JsonPropertyName("access_token")]
-    public string AccessToken { get; set; } = string.Empty;
+    [System.Text.Json.Serialization.JsonPropertyName("hex")]
+    public string? Hex { get; set; }
 
-    [System.Text.Json.Serialization.JsonPropertyName("expires_in")]
-    public int ExpiresIn { get; set; }
+    [System.Text.Json.Serialization.JsonPropertyName("flight")]
+    public string? Flight { get; set; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("lat")]
+    public double? Lat { get; set; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("lon")]
+    public double? Lon { get; set; }
+
+    // alt_baro is an integer (feet) when airborne, or the string "ground" when on the ground
+    [System.Text.Json.Serialization.JsonPropertyName("alt_baro")]
+    public System.Text.Json.JsonElement AltBaro { get; set; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("gs")]
+    public double? Gs { get; set; }       // ground speed, knots
+
+    [System.Text.Json.Serialization.JsonPropertyName("track")]
+    public double? Track { get; set; }    // true track, degrees
+
+    [System.Text.Json.Serialization.JsonPropertyName("baro_rate")]
+    public double? BaroRate { get; set; } // vertical rate, ft/min
 }
 
 // Internal: adsbdb.com /v0/callsign/{callsign} response.

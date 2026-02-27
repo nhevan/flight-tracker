@@ -30,8 +30,7 @@ var services = new ServiceCollection();
 services.AddSingleton(settings);
 // IHttpClientFactory manages connection pools for all HTTP clients in the app
 services.AddHttpClient();
-services.AddSingleton<IOpenSkyTokenProvider, OpenSkyTokenProvider>();
-services.AddSingleton<IFlightService, OpenSkyService>();
+services.AddSingleton<IFlightService, AirplanesLiveService>();
 services.AddSingleton<IFlightRouteService, FlightRouteService>();
 services.AddSingleton<IAircraftInfoService, HexDbService>();
 services.AddSingleton<IAircraftPhotoService, PlaneSpottersPhotoService>();
