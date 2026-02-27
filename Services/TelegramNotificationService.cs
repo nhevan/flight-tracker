@@ -177,10 +177,15 @@ public sealed class TelegramNotificationService : ITelegramNotificationService
                                  _          => "🔵"
                              };
 
+        // Prefix direction with ~ when it was derived from GPS position delta rather
+        // than broadcast by the aircraft's ADS-B transponder, matching the terminal table.
+        bool headingInferred = f.HeadingDegrees is null && ef.InferredHeadingDegrees is not null;
+        string directionDisplay = headingInferred ? $"~{direction}" : direction;
+
         string etaStr = FormatEta(etaSeconds);
         string header = isEmergency
             ? $"{headerEmoji} <b>{EscapeHtml(callsign)} — EMERGENCY</b>"
-            : $"{headerEmoji} <b>{EscapeHtml(callsign)} — {direction}</b> | {etaStr}";
+            : $"{headerEmoji} <b>{EscapeHtml(callsign)} — {directionDisplay}</b> | {etaStr}";
 
         sb.AppendLine(header);
 
