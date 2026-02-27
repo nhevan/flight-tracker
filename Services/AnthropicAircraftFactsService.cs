@@ -12,11 +12,12 @@ public sealed class AnthropicAircraftFactsService : IAircraftFactsService
     private readonly HttpClient _httpClient;
     private readonly AnthropicSettings _settings;
 
-    // Session-lifetime cache keyed by TypeCode — same aircraft model always gives same facts
+    // Session-lifetime cache keyed by registration (when available) or TypeCode.
+    // Keying by registration gives each individual airframe its own personalised facts.
     private readonly ConcurrentDictionary<string, string?> _cache
         = new(StringComparer.OrdinalIgnoreCase);
 
-    // Request coalescing — concurrent callers for the same TypeCode share one Task
+    // Request coalescing — concurrent callers for the same cache key share one Task
     private readonly ConcurrentDictionary<string, Task<string?>> _inFlight
         = new(StringComparer.OrdinalIgnoreCase);
 
@@ -30,27 +31,34 @@ public sealed class AnthropicAircraftFactsService : IAircraftFactsService
         _httpClient.DefaultRequestHeaders.Add("anthropic-version", "2023-06-01");
     }
 
-    public Task<string?> GetFactsAsync(string? typeCode, string? category, CancellationToken cancellationToken)
+    public Task<string?> GetFactsAsync(string? typeCode, string? category, string? registration, CancellationToken cancellationToken)
     {
         if (!_settings.Enabled || string.IsNullOrWhiteSpace(typeCode))
             return Task.FromResult<string?>(null);
 
+        // Cache key: use registration when available (personalised per airframe),
+        // fall back to typeCode so all aircraft of the same type share one cached entry.
+        string cacheKey = string.IsNullOrWhiteSpace(registration) ? typeCode : registration;
+
         // Hot path: return cached result immediately
-        if (_cache.TryGetValue(typeCode, out var cached))
+        if (_cache.TryGetValue(cacheKey, out var cached))
             return Task.FromResult(cached);
 
-        // Coalesce concurrent requests for the same TypeCode
-        return _inFlight.GetOrAdd(typeCode, key => FetchAndCacheAsync(key, category, cancellationToken));
+        // Coalesce concurrent requests for the same cache key
+        return _inFlight.GetOrAdd(cacheKey, key => FetchAndCacheAsync(key, typeCode, category, registration, cancellationToken));
     }
 
-    private async Task<string?> FetchAndCacheAsync(string typeCode, string? category, CancellationToken cancellationToken)
+    private async Task<string?> FetchAndCacheAsync(string cacheKey, string typeCode, string? category, string? registration, CancellationToken cancellationToken)
     {
         try
         {
-            string categoryHint = string.IsNullOrWhiteSpace(category) ? "" : $" ({category})";
+            string regHint      = string.IsNullOrWhiteSpace(registration) ? "" : $", registration {registration}";
+            string categoryHint = string.IsNullOrWhiteSpace(category)     ? "" : $" ({category})";
             string prompt =
-                $"You are a knowledgeable aviation enthusiast. Give me 2-3 interesting facts about the {typeCode} aircraft{categoryHint}. " +
-                $"Must Include: approximate passenger capacity, year it first entered service, and what it is mostly used for. " +
+                $"You are the aircraft itself — speak in first person as if you ARE the plane. " +
+                $"You are a {typeCode}{regHint}{categoryHint}. " +
+                $"Tell me 2-3 interesting things about yourself: your approximate passenger capacity, " +
+                $"the year you first entered service, and what you are mostly used for. " +
                 $"Be concise — 2-3 sentences maximum. Plain text only, no markdown, no bullet points.";
 
             var requestBody = new
@@ -73,18 +81,18 @@ public sealed class AnthropicAircraftFactsService : IAircraftFactsService
                 cancellationToken: cancellationToken);
 
             string? facts = result?.Content?.FirstOrDefault()?.Text?.Trim();
-            _cache[typeCode] = facts;
+            _cache[cacheKey] = facts;
             return facts;
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[AnthropicFacts] Failed to fetch facts for {typeCode}: {ex.Message}");
-            _cache[typeCode] = null;
+            Console.WriteLine($"[AnthropicFacts] Failed to fetch facts for {cacheKey}: {ex.Message}");
+            _cache[cacheKey] = null;
             return null;
         }
         finally
         {
-            _inFlight.TryRemove(typeCode, out _);
+            _inFlight.TryRemove(cacheKey, out _);
         }
     }
 

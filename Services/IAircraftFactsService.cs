@@ -7,5 +7,5 @@ public interface IAircraftFactsService
     /// Returns null if the feature is disabled, the type code is unknown, or the call fails.
     /// Results are cached by type code for the lifetime of the session.
     /// </summary>
-    Task<string?> GetFactsAsync(string? typeCode, string? category, CancellationToken cancellationToken);
+    Task<string?> GetFactsAsync(string? typeCode, string? category, string? registration, CancellationToken cancellationToken);
 }

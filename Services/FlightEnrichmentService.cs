@@ -47,7 +47,7 @@ public sealed class FlightEnrichmentService : IFlightEnrichmentService
         var photoTask = _photoService.GetPhotoUrlAsync(
             flight.Icao24, aircraft?.Registration, cancellationToken);
         var factsTask = _factsService.GetFactsAsync(
-            aircraft?.TypeCode, aircraft?.Category, cancellationToken);
+            aircraft?.TypeCode, aircraft?.Category, aircraft?.Registration, cancellationToken);
 
         await Task.WhenAll(photoTask, factsTask);
 
