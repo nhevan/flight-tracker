@@ -25,6 +25,7 @@ public sealed class MapboxSnapshotService : IMapSnapshotService
         double? lat,
         double? lon,
         double? headingDegrees,
+        double? inferredHeadingDegrees,
         double? altitudeMeters,
         CancellationToken cancellationToken)
     {
@@ -34,8 +35,10 @@ public sealed class MapboxSnapshotService : IMapSnapshotService
         if (lat is null || lon is null)
             return null;
 
-        // Without heading data the map shows no meaningful trajectory — skip it.
-        if (headingDegrees is null)
+        // Without any heading data the map shows no meaningful trajectory — skip it.
+        // Fall back to the inferred heading (derived from GPS position delta) if available.
+        double? effectiveHeading = headingDegrees ?? inferredHeadingDegrees;
+        if (effectiveHeading is null)
             return null;
 
         try
@@ -48,7 +51,7 @@ public sealed class MapboxSnapshotService : IMapSnapshotService
             int    zoom     = DistanceToZoom(distToHomeKm);
             double halfKm   = ZoomToHalfTrajectoryKm(zoom);
             string overlays = BuildOverlays(lat.Value, lon.Value, _home.Latitude, _home.Longitude,
-                                            headingDegrees, halfKm);
+                                            effectiveHeading, halfKm);
             string style    = string.IsNullOrWhiteSpace(_settings.Style) ? "mapbox/dark-v11" : _settings.Style;
 
             // Map is centred on HOME so the user sees the flight path relative to their location

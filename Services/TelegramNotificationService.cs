@@ -49,6 +49,7 @@ public sealed class TelegramNotificationService : ITelegramNotificationService
             // 1️⃣ Try to get a live map snapshot (fetched server-side to keep token private)
             byte[]? mapBytes = await _mapService.GetSnapshotAsync(
                 f.Latitude, f.Longitude, f.HeadingDegrees,
+                flight.InferredHeadingDegrees,
                 f.BarometricAltitudeMeters, cancellationToken);
 
             string apiUrl;

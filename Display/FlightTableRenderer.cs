@@ -69,10 +69,16 @@ public static class FlightTableRenderer
                 ? (f.VelocityMetersPerSecond.Value * 3.6).ToString("F0", CultureInfo.InvariantCulture)
                 : "[grey]--[/]";
 
+            // Effective heading: broadcast value takes priority; inferred fallback shown in grey with ~ prefix
+            double? effectiveHeading = f.HeadingDegrees ?? ef.InferredHeadingDegrees;
+
             string heading = f.HeadingDegrees.HasValue
                 ? string.Create(CultureInfo.InvariantCulture,
                     $"{f.HeadingDegrees.Value:F1} {CardinalDirection(f.HeadingDegrees.Value)}")
-                : "[grey]--[/]";
+                : ef.InferredHeadingDegrees.HasValue
+                    ? string.Create(CultureInfo.InvariantCulture,
+                        $"[grey]~{ef.InferredHeadingDegrees.Value:F1} {CardinalDirection(ef.InferredHeadingDegrees.Value)}[/]")
+                    : "[grey]--[/]";
 
             string vrate = f.VerticalRateMetersPerSecond.HasValue
                 ? (f.VerticalRateMetersPerSecond.Value >= 0 ? "+" : "") +
@@ -90,8 +96,8 @@ public static class FlightTableRenderer
                 altitude,
                 speed,
                 heading,
-                FormatDirection(f.Latitude, f.Longitude, f.HeadingDegrees, f.DistanceKm, homeLat, homeLon),
-                FormatEtaOverhead(f.Latitude, f.Longitude, f.HeadingDegrees, f.VelocityMetersPerSecond, f.DistanceKm, homeLat, homeLon),
+                FormatDirection(f.Latitude, f.Longitude, effectiveHeading, f.DistanceKm, homeLat, homeLon),
+                FormatEtaOverhead(f.Latitude, f.Longitude, effectiveHeading, f.VelocityMetersPerSecond, f.DistanceKm, homeLat, homeLon),
                 vrate,
                 FormatEte(ef.Route, f.VelocityMetersPerSecond));
         }

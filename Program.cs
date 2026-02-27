@@ -2,6 +2,7 @@ using FlightTracker.Configuration;
 using FlightTracker.Data;
 using FlightTracker.Display;
 using FlightTracker.Helpers;
+using FlightTracker.Models;
 using FlightTracker.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -103,8 +104,10 @@ Console.WriteLine();
 
 TimeSpan pollInterval = TimeSpan.FromSeconds(settings.Polling.IntervalSeconds);
 
-// Tracks ICAO24s seen on the previous poll to detect newly-entering flights
-var previousIcaos = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+// Tracks the last known GPS position per ICAO24 so we can infer heading when
+// an aircraft doesn't broadcast HeadingDegrees (position delta → initial bearing).
+var previousPositions = new Dictionary<string, (double Lat, double Lon)>(
+    StringComparer.OrdinalIgnoreCase);
 
 // Tracks flights already notified via Telegram (avoids repeat messages per pass)
 var notifiedIcaos = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -116,30 +119,55 @@ while (!cts.Token.IsCancellationRequested)
 {
     try
     {
-        var flights  = await flightService.GetOverheadFlightsAsync(cts.Token);
-        var enriched = await enrichmentService.EnrichAsync(flights, cts.Token);
+        var flights     = await flightService.GetOverheadFlightsAsync(cts.Token);
+        var rawEnriched = await enrichmentService.EnrichAsync(flights, cts.Token);
+
+        // Inject inferred heading for aircraft that don't broadcast HeadingDegrees.
+        // Computed from the GPS position delta relative to the previous poll.
+        // First-poll aircraft (no prior position) keep InferredHeadingDegrees = null.
+        IReadOnlyList<EnrichedFlightState> enriched = rawEnriched
+            .Select(ef =>
+            {
+                var f = ef.State;
+                if (f.HeadingDegrees is not null
+                    || f.Latitude is null || f.Longitude is null
+                    || !previousPositions.TryGetValue(f.Icao24, out var prev))
+                    return ef;
+                double? inferred = FlightDirectionHelper.InferHeading(
+                    prev.Lat, prev.Lon, f.Latitude.Value, f.Longitude.Value);
+                return inferred is null ? ef : ef with { InferredHeadingDegrees = inferred };
+            })
+            .ToList();
 
         double homeLat = settings.HomeLocation.Latitude;
         double homeLon = settings.HomeLocation.Longitude;
 
         // Handle new flights (skipped on first poll so startup is silent)
-        if (previousIcaos.Count > 0)
+        if (previousPositions.Count > 0)
         {
             foreach (var ef in enriched)
             {
-                if (!previousIcaos.Contains(ef.State.Icao24))
+                if (!previousPositions.ContainsKey(ef.State.Icao24))
                     Console.Write('\a'); // audible alert for every new flight
             }
         }
-        previousIcaos = enriched.Select(ef => ef.State.Icao24)
-                                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        // Update previous positions for the next poll's heading inference
+        previousPositions.Clear();
+        foreach (var ef in enriched)
+        {
+            var fs = ef.State;
+            if (fs.Latitude.HasValue && fs.Longitude.HasValue)
+                previousPositions[fs.Icao24] = (fs.Latitude.Value, fs.Longitude.Value);
+        }
 
         // Telegram: notify and log when any flight is ≤ 2 minutes from overhead
         foreach (var ef in enriched)
         {
             var f = ef.State;
+            double? effectiveHeading = f.HeadingDegrees ?? ef.InferredHeadingDegrees;
             double? etaSecs = FlightDirectionHelper.EtaToOverheadSeconds(
-                f.Latitude, f.Longitude, f.HeadingDegrees, f.VelocityMetersPerSecond,
+                f.Latitude, f.Longitude, effectiveHeading, f.VelocityMetersPerSecond,
                 homeLat, homeLon);
 
             if (etaSecs is <= 120.0
@@ -148,7 +176,7 @@ while (!cts.Token.IsCancellationRequested)
                 && !notifiedIcaos.Contains(f.Icao24))
             {
                 string? dir = FlightDirectionHelper.Classify(
-                    f.Latitude, f.Longitude, f.HeadingDegrees, f.DistanceKm,
+                    f.Latitude, f.Longitude, effectiveHeading, f.DistanceKm,
                     homeLat, homeLon);
                 // Query BEFORE logging so the count reflects prior visits only
                 var visitorInfo = await repeatVisitorService.GetVisitorInfoAsync(f.Icao24, cts.Token);
@@ -159,7 +187,7 @@ while (!cts.Token.IsCancellationRequested)
         }
 
         // Remove flights that left range so they can re-trigger if they return
-        notifiedIcaos.RemoveWhere(icao => !previousIcaos.Contains(icao));
+        notifiedIcaos.RemoveWhere(icao => !previousPositions.ContainsKey(icao));
 
         FlightTableRenderer.Render(
             enriched,

@@ -1,5 +1,7 @@
 namespace FlightTracker.Helpers;
 
+using FlightTracker.Models;
+
 /// <summary>
 /// Pure-logic helper that classifies a flight's direction relative to a home position.
 /// Shared between FlightTableRenderer (display) and TelegramNotificationService (alerts).
@@ -74,6 +76,33 @@ public static class FlightDirectionHelper
 
         // t > 0 means the closest approach is ahead; t ≤ 0 means it's already passed
         return t > 0 ? t / speedMs.Value : null;
+    }
+
+    /// <summary>
+    /// Computes the initial bearing (degrees clockwise from north) from a previous GPS
+    /// position to the current position — used as a fallback when an aircraft does not
+    /// broadcast <c>HeadingDegrees</c> via its ADS-B transponder.
+    /// Returns <c>null</c> when the two points are less than 50 metres apart
+    /// (GPS jitter guard — not enough movement to infer a reliable heading).
+    /// </summary>
+    /// <param name="prevLat">Latitude of the aircraft's position on the previous poll.</param>
+    /// <param name="prevLon">Longitude of the aircraft's position on the previous poll.</param>
+    /// <param name="currLat">Latitude of the aircraft's current position.</param>
+    /// <param name="currLon">Longitude of the aircraft's current position.</param>
+    public static double? InferHeading(
+        double prevLat, double prevLon,
+        double currLat, double currLon)
+    {
+        if (Haversine.DistanceKm(prevLat, prevLon, currLat, currLon) * 1000.0 < 50.0)
+            return null;
+
+        double dLon    = ToRad(currLon - prevLon);
+        double fromLat = ToRad(prevLat);
+        double toLat   = ToRad(currLat);
+        double y       = Math.Sin(dLon) * Math.Cos(toLat);
+        double x       = Math.Cos(fromLat) * Math.Sin(toLat)
+                       - Math.Sin(fromLat) * Math.Cos(toLat) * Math.Cos(dLon);
+        return (Math.Atan2(y, x) * 180.0 / Math.PI + 360.0) % 360.0;
     }
 
     private static double ToRad(double deg) => deg * Math.PI / 180.0;
