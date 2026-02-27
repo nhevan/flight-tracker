@@ -19,4 +19,13 @@ public sealed record EnrichedFlightState(
     /// Null on the first poll or when the aircraft moved less than 50 m (GPS jitter).
     /// </summary>
     double?       InferredHeadingDegrees = null
-);
+)
+{
+    /// <summary>
+    /// Transponder-broadcast heading when available; GPS-inferred heading otherwise.
+    /// Null only when neither source has data (first poll for aircraft with no ADS-B heading).
+    /// Use this for all heading consumers except display code that needs to distinguish the source
+    /// (e.g. the <c>~</c> prefix shown in the terminal table and Telegram message).
+    /// </summary>
+    public double? EffectiveHeading => State.HeadingDegrees ?? InferredHeadingDegrees;
+}
