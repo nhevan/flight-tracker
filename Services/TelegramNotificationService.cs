@@ -33,6 +33,7 @@ public sealed class TelegramNotificationService : ITelegramNotificationService
         EnrichedFlightState flight,
         string direction,
         double? etaSeconds,
+        RepeatVisitorInfo? visitorInfo,
         CancellationToken cancellationToken)
     {
         if (!_settings.Enabled
@@ -43,7 +44,7 @@ public sealed class TelegramNotificationService : ITelegramNotificationService
         try
         {
             var f    = flight.State;
-            string text = BuildMessage(flight, direction, etaSeconds);
+            string text = BuildMessage(flight, direction, etaSeconds, visitorInfo);
 
             // 1️⃣ Try to get a live map snapshot (fetched server-side to keep token private)
             byte[]? mapBytes = await _mapService.GetSnapshotAsync(
@@ -128,13 +129,39 @@ public sealed class TelegramNotificationService : ITelegramNotificationService
         }
     }
 
-    private static string BuildMessage(EnrichedFlightState ef, string direction, double? etaSeconds)
+    private static string BuildMessage(
+        EnrichedFlightState ef,
+        string direction,
+        double? etaSeconds,
+        RepeatVisitorInfo? visitorInfo)
     {
         var f = ef.State;
 
         string callsign = string.IsNullOrWhiteSpace(f.Callsign) || f.Callsign == "N/A"
             ? f.Icao24
             : f.Callsign.Trim();
+
+        var sb = new System.Text.StringBuilder();
+
+        // ── Repeat visitor banner (prepended before everything else) ─────────
+        // Use registration for a friendlier display name; fall back to ICAO24 hex.
+        string displayIdent = !string.IsNullOrEmpty(ef.Aircraft?.Registration)
+            ? ef.Aircraft!.Registration!
+            : f.Icao24;
+
+        if (visitorInfo is not null)
+        {
+            string relTime = FormatRelativeTime(visitorInfo.LastSeenAt);
+            string destHint = !string.IsNullOrEmpty(visitorInfo.LastDestIata)
+                ? $" heading to {visitorInfo.LastDestIata}"
+                : string.Empty;
+            int visitNumber = visitorInfo.TotalPreviousSightings + 1;
+            sb.AppendLine($"🔁 Welcome back! {EscapeHtml(displayIdent)} was last seen {relTime}{EscapeHtml(destHint)}. This is visit #{visitNumber}!");
+        }
+        else
+        {
+            sb.AppendLine($"👋 First time spotting this aircraft!");
+        }
 
         // ── Header line ──────────────────────────────────────────────────────
         bool isEmergency = (!string.IsNullOrEmpty(f.Emergency) && f.Emergency != "none")
@@ -154,7 +181,6 @@ public sealed class TelegramNotificationService : ITelegramNotificationService
             ? $"{headerEmoji} <b>{EscapeHtml(callsign)} — EMERGENCY</b>"
             : $"{headerEmoji} <b>{EscapeHtml(callsign)} — {direction}</b> | {etaStr}";
 
-        var sb = new System.Text.StringBuilder();
         sb.AppendLine(header);
 
         // Emergency detail line
@@ -237,6 +263,18 @@ public sealed class TelegramNotificationService : ITelegramNotificationService
         int m = total / 60;
         int s = total % 60;
         return m > 0 ? $"{m}m {s:D2}s" : $"{s}s";
+    }
+
+    private static string FormatRelativeTime(DateTimeOffset lastSeen)
+    {
+        TimeSpan elapsed = DateTimeOffset.UtcNow - lastSeen;
+        return elapsed.TotalMinutes < 2    ? "just now"
+             : elapsed.TotalMinutes < 60   ? $"{(int)elapsed.TotalMinutes} minutes ago"
+             : elapsed.TotalHours   < 24   ? $"{(int)elapsed.TotalHours} hours ago"
+             : elapsed.TotalDays    < 2    ? "yesterday"
+             : elapsed.TotalDays    < 7    ? $"{(int)elapsed.TotalDays} days ago"
+             : elapsed.TotalDays    < 14   ? "last week"
+             : $"{(int)(elapsed.TotalDays / 7)} weeks ago";
     }
 
     private static string BuildAircraftString(string? description, AircraftInfo? info)

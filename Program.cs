@@ -39,14 +39,16 @@ services.AddSingleton<IMapSnapshotService, MapboxSnapshotService>();
 services.AddSingleton<IFlightEnrichmentService, FlightEnrichmentService>();
 services.AddSingleton<ITelegramNotificationService, TelegramNotificationService>();
 services.AddSingleton<IFlightLoggingService, SqliteFlightLoggingService>();
+services.AddSingleton<IRepeatVisitorService, RepeatVisitorService>();
 services.AddSingleton<ITelegramCommandListener, TelegramCommandListener>();
 await using ServiceProvider provider = services.BuildServiceProvider();
 
-var flightService     = provider.GetRequiredService<IFlightService>();
-var enrichmentService = provider.GetRequiredService<IFlightEnrichmentService>();
-var telegramService   = provider.GetRequiredService<ITelegramNotificationService>();
-var loggingService    = provider.GetRequiredService<IFlightLoggingService>();
-var commandListener   = provider.GetRequiredService<ITelegramCommandListener>();
+var flightService        = provider.GetRequiredService<IFlightService>();
+var enrichmentService    = provider.GetRequiredService<IFlightEnrichmentService>();
+var telegramService      = provider.GetRequiredService<ITelegramNotificationService>();
+var loggingService       = provider.GetRequiredService<IFlightLoggingService>();
+var repeatVisitorService = provider.GetRequiredService<IRepeatVisitorService>();
+var commandListener      = provider.GetRequiredService<ITelegramCommandListener>();
 
 // ── Graceful shutdown (Ctrl+C and terminal close) ────────────────────────────
 using var cts = new CancellationTokenSource();
@@ -148,7 +150,9 @@ while (!cts.Token.IsCancellationRequested)
                 string? dir = FlightDirectionHelper.Classify(
                     f.Latitude, f.Longitude, f.HeadingDegrees, f.DistanceKm,
                     homeLat, homeLon);
-                await telegramService.NotifyAsync(ef, dir ?? "Towards", etaSecs, cts.Token);
+                // Query BEFORE logging so the count reflects prior visits only
+                var visitorInfo = await repeatVisitorService.GetVisitorInfoAsync(f.Icao24, cts.Token);
+                await telegramService.NotifyAsync(ef, dir ?? "Towards", etaSecs, visitorInfo, cts.Token);
                 await loggingService.LogAsync(ef, dir ?? "Towards", etaSecs, DateTimeOffset.UtcNow, cts.Token);
                 notifiedIcaos.Add(f.Icao24);
             }
