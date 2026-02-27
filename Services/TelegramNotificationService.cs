@@ -132,48 +132,102 @@ public sealed class TelegramNotificationService : ITelegramNotificationService
     {
         var f = ef.State;
 
-        string dirEmoji = direction switch
-        {
-            "Overhead" => "🔴",
-            "Towards"  => "🟢",
-            _          => "🔵"
-        };
-
         string callsign = string.IsNullOrWhiteSpace(f.Callsign) || f.Callsign == "N/A"
             ? f.Icao24
             : f.Callsign.Trim();
 
-        // Route: "JNB → AMS" or "Unknown route"
-        string route = (ef.Route?.OriginIata ?? ef.Route?.OriginIcao, ef.Route?.DestIata ?? ef.Route?.DestIcao) switch
+        // ── Header line ──────────────────────────────────────────────────────
+        bool isEmergency = (!string.IsNullOrEmpty(f.Emergency) && f.Emergency != "none")
+                           || f.Squawk is "7700" or "7600" or "7500";
+
+        string headerEmoji = isEmergency  ? "🚨"
+                           : f.IsMilitary ? "🪖"
+                           : direction switch
+                             {
+                                 "Overhead" => "🔴",
+                                 "Towards"  => "🟢",
+                                 _          => "🔵"
+                             };
+
+        string etaStr = FormatEta(etaSeconds);
+        string header = isEmergency
+            ? $"{headerEmoji} <b>{EscapeHtml(callsign)} — EMERGENCY</b>"
+            : $"{headerEmoji} <b>{EscapeHtml(callsign)} — {direction}</b> | {etaStr}";
+
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine(header);
+
+        // Emergency detail line
+        if (isEmergency)
+        {
+            string emergencyLabel = f.Emergency switch
+            {
+                "general"   => "General emergency",
+                "lifeguard" => "Medical emergency",
+                "minfuel"   => "Minimum fuel",
+                "nordo"     => "No radio contact",
+                "unlawful"  => "Unlawful interference",
+                "downed"    => "Downed aircraft",
+                _           => "Emergency"
+            };
+            string squawkNote = !string.IsNullOrEmpty(f.Squawk) ? $" · Squawk {f.Squawk}" : string.Empty;
+            sb.AppendLine($"⚠️ {emergencyLabel}{squawkNote} | ETA: {etaStr}");
+        }
+
+        // ── Route line ───────────────────────────────────────────────────────
+        string routePart = (ef.Route?.OriginIata ?? ef.Route?.OriginIcao,
+                            ef.Route?.DestIata   ?? ef.Route?.DestIcao) switch
         {
             (string dep, string arr) => $"{dep} → {arr}",
             _                        => "Unknown route"
         };
+        string distRoute = ef.Route?.RouteDistanceKm.HasValue == true
+            ? $" ({ef.Route.RouteDistanceKm.Value:N0} km)"
+            : string.Empty;
+        sb.AppendLine($"Route: {EscapeHtml(routePart)}{distRoute}");
 
-        // Aircraft: "B789 / PH-BHO (Wide-body Jet)" or just type/reg if partial
-        string aircraft = BuildAircraftString(ef.Aircraft);
+        // ── Aircraft line ────────────────────────────────────────────────────
+        sb.AppendLine(EscapeHtml(BuildAircraftString(f.AircraftDescription, ef.Aircraft)));
 
-        string dist  = f.DistanceKm.HasValue
-            ? f.DistanceKm.Value.ToString("F1", CultureInfo.InvariantCulture) + " km"
-            : "?";
+        // ── Stats line ───────────────────────────────────────────────────────
         string alt   = f.BarometricAltitudeMeters.HasValue
             ? f.BarometricAltitudeMeters.Value.ToString("F0", CultureInfo.InvariantCulture) + " m"
             : "?";
         string speed = f.VelocityMetersPerSecond.HasValue
             ? (f.VelocityMetersPerSecond.Value * 3.6).ToString("F0", CultureInfo.InvariantCulture) + " km/h"
             : "?";
-        string eta   = FormatEta(etaSeconds);
+        string dist  = f.DistanceKm.HasValue
+            ? f.DistanceKm.Value.ToString("F1", CultureInfo.InvariantCulture) + " km"
+            : "?";
 
-        string message =
-               $"{dirEmoji} <b>{EscapeHtml(callsign)}</b> — {direction}\n" +
-               $"Route: {EscapeHtml(route)}\n" +
-               $"Aircraft: {EscapeHtml(aircraft)}\n" +
-               $"Distance: {dist} | Alt: {alt} | Speed: {speed} | Overhead in: {eta}";
+        // Selected altitude indicator: show when nav altitude differs from current by > 300 m
+        string navAlt = string.Empty;
+        if (f.NavAltitudeMeters.HasValue && f.BarometricAltitudeMeters.HasValue
+            && Math.Abs(f.NavAltitudeMeters.Value - f.BarometricAltitudeMeters.Value) > 300)
+        {
+            int fl = (int)Math.Round(f.NavAltitudeMeters.Value / 30.48 / 10) * 10;
+            navAlt = $" → FL{fl:D3}";
+        }
 
+        sb.AppendLine($"Alt: {alt}{navAlt} | Speed: {speed} | {dist}" +
+                      (isEmergency ? string.Empty : $" | ETA: {etaStr}"));
+
+        // ── Wind / temp line (only when data is available) ───────────────────
+        var windParts = new List<string>(2);
+        if (f.WindSpeedKnots.HasValue && f.WindDirectionDeg.HasValue)
+            windParts.Add($"Wind: {f.WindDirectionDeg.Value:F0}° {f.WindSpeedKnots.Value:F0} kts");
+        else if (f.WindSpeedKnots.HasValue)
+            windParts.Add($"Wind: {f.WindSpeedKnots.Value:F0} kts");
+        if (f.OutsideAirTempC.HasValue)
+            windParts.Add($"OAT: {f.OutsideAirTempC.Value:F0}°C");
+        if (windParts.Count > 0)
+            sb.AppendLine(string.Join(" | ", windParts));
+
+        // ── AI facts ─────────────────────────────────────────────────────────
         if (!string.IsNullOrWhiteSpace(ef.AircraftFacts))
-            message += $"\n\n✈️ {EscapeHtml(ef.AircraftFacts)}";
+            sb.Append($"\n✈️ {EscapeHtml(ef.AircraftFacts)}");
 
-        return message;
+        return sb.ToString().TrimEnd();
     }
 
     private static string FormatEta(double? etaSeconds)
@@ -185,19 +239,25 @@ public sealed class TelegramNotificationService : ITelegramNotificationService
         return m > 0 ? $"{m}m {s:D2}s" : $"{s}s";
     }
 
-    private static string BuildAircraftString(AircraftInfo? info)
+    private static string BuildAircraftString(string? description, AircraftInfo? info)
     {
-        if (info is null) return "Unknown";
+        // Lead with the full description from airplanes.live (e.g. "Boeing 787-9"),
+        // then type code / registration, then operator.
+        var parts = new List<string>(4);
 
-        var parts = new List<string>(3);
-        if (!string.IsNullOrEmpty(info.TypeCode))     parts.Add(info.TypeCode);
-        if (!string.IsNullOrEmpty(info.Registration)) parts.Add(info.Registration);
+        string? leadDesc = !string.IsNullOrEmpty(description) ? description
+                         : !string.IsNullOrEmpty(info?.Category) ? info!.Category
+                         : null;
+        if (leadDesc is not null) parts.Add(leadDesc);
 
-        string main = parts.Count > 0 ? string.Join(" / ", parts) : "Unknown";
+        var codeParts = new List<string>(2);
+        if (!string.IsNullOrEmpty(info?.TypeCode))     codeParts.Add(info!.TypeCode);
+        if (!string.IsNullOrEmpty(info?.Registration)) codeParts.Add(info!.Registration);
+        if (codeParts.Count > 0) parts.Add(string.Join(" / ", codeParts));
 
-        return !string.IsNullOrEmpty(info.Category)
-            ? $"{main} ({info.Category})"
-            : main;
+        if (!string.IsNullOrEmpty(info?.Operator)) parts.Add(info!.Operator);
+
+        return parts.Count > 0 ? string.Join(" · ", parts) : "Unknown aircraft";
     }
 
     public async Task SendStatusAsync(string message, CancellationToken cancellationToken = default)

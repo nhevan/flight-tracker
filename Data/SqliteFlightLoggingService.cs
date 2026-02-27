@@ -53,12 +53,46 @@ public sealed class SqliteFlightLoggingService : IFlightLoggingService
                 Category            TEXT,
                 OriginIata          TEXT,
                 DestIata            TEXT,
-                RouteDistanceKm     REAL
+                RouteDistanceKm     REAL,
+                Squawk              TEXT,
+                Emergency           TEXT,
+                IsMilitary          INTEGER,
+                AltGeomMeters       REAL,
+                NavAltitudeMeters   REAL,
+                WindDirectionDeg    REAL,
+                WindSpeedKnots      REAL,
+                OutsideAirTempC     REAL,
+                AircraftDesc        TEXT
             );
             CREATE INDEX IF NOT EXISTS ix_sightings_seen_at ON FlightSightings(SeenAt);
             CREATE INDEX IF NOT EXISTS ix_sightings_icao24  ON FlightSightings(Icao24);
             """;
         await cmd.ExecuteNonQueryAsync(cancellationToken);
+
+        // Migrate existing databases — add new columns if they don't exist yet.
+        // ALTER TABLE ADD COLUMN fails if the column already exists; we catch and ignore that.
+        var newColumns = new (string Name, string Type)[]
+        {
+            ("Squawk",            "TEXT"),
+            ("Emergency",         "TEXT"),
+            ("IsMilitary",        "INTEGER"),
+            ("AltGeomMeters",     "REAL"),
+            ("NavAltitudeMeters", "REAL"),
+            ("WindDirectionDeg",  "REAL"),
+            ("WindSpeedKnots",    "REAL"),
+            ("OutsideAirTempC",   "REAL"),
+            ("AircraftDesc",      "TEXT"),
+        };
+        foreach (var (name, type) in newColumns)
+        {
+            try
+            {
+                using var mc = conn.CreateCommand();
+                mc.CommandText = $"ALTER TABLE FlightSightings ADD COLUMN {name} {type}";
+                await mc.ExecuteNonQueryAsync(cancellationToken);
+            }
+            catch { /* column already exists — safe to ignore */ }
+        }
 
         Console.WriteLine($"[FlightLog] Database ready: {_dbPath}");
     }
@@ -87,14 +121,22 @@ public sealed class SqliteFlightLoggingService : IFlightLoggingService
                     HeadingDegrees, VerticalRateMps, DistanceKm,
                     Direction, EtaSeconds,
                     TypeCode, Registration, Operator, Category,
-                    OriginIata, DestIata, RouteDistanceKm
+                    OriginIata, DestIata, RouteDistanceKm,
+                    Squawk, Emergency, IsMilitary,
+                    AltGeomMeters, NavAltitudeMeters,
+                    WindDirectionDeg, WindSpeedKnots, OutsideAirTempC,
+                    AircraftDesc
                 ) VALUES (
                     $seenAt, $icao24, $callsign, $originCountry,
                     $latitude, $longitude, $altitudeMeters, $velocityKmh,
                     $headingDegrees, $verticalRateMps, $distanceKm,
                     $direction, $etaSeconds,
                     $typeCode, $registration, $operator, $category,
-                    $originIata, $destIata, $routeDistanceKm
+                    $originIata, $destIata, $routeDistanceKm,
+                    $squawk, $emergency, $isMilitary,
+                    $altGeomMeters, $navAltitudeMeters,
+                    $windDirectionDeg, $windSpeedKnots, $outsideAirTempC,
+                    $aircraftDesc
                 )
                 """;
 
@@ -120,6 +162,15 @@ public sealed class SqliteFlightLoggingService : IFlightLoggingService
             cmd.Parameters.AddWithValue("$originIata",       flight.Route?.OriginIata as object ?? DBNull.Value);
             cmd.Parameters.AddWithValue("$destIata",         flight.Route?.DestIata as object ?? DBNull.Value);
             cmd.Parameters.AddWithValue("$routeDistanceKm",  flight.Route?.RouteDistanceKm as object ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("$squawk",           f.Squawk as object ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("$emergency",        f.Emergency as object ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("$isMilitary",       f.IsMilitary ? 1 : DBNull.Value);
+            cmd.Parameters.AddWithValue("$altGeomMeters",    f.AltGeomMeters as object ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("$navAltitudeMeters",f.NavAltitudeMeters as object ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("$windDirectionDeg", f.WindDirectionDeg as object ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("$windSpeedKnots",   f.WindSpeedKnots as object ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("$outsideAirTempC",  f.OutsideAirTempC as object ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("$aircraftDesc",     f.AircraftDescription as object ?? DBNull.Value);
 
             await cmd.ExecuteNonQueryAsync(cancellationToken);
         }

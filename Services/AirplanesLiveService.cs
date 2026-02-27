@@ -98,10 +98,21 @@ public sealed class AirplanesLiveService : IFlightService
             Latitude                    = a.Lat,
             BarometricAltitudeMeters    = altMeters,
             OnGround                    = onGround,
-            VelocityMetersPerSecond     = a.Gs.HasValue ? a.Gs.Value * 0.514444 : null,  // knots → m/s
+            VelocityMetersPerSecond     = a.Gs.HasValue ? a.Gs.Value * 0.514444 : null,       // knots → m/s
             HeadingDegrees              = a.Track,
             VerticalRateMetersPerSecond = a.BaroRate.HasValue ? a.BaroRate.Value * 0.00508 : null, // ft/min → m/s
             DistanceKm                  = distanceKm,
+
+            // ── Extended airplanes.live fields ───────────────────────────────
+            Squawk              = a.Squawk,
+            Emergency           = a.Emergency,
+            IsMilitary          = (a.DbFlags & 1) == 1,
+            AltGeomMeters       = a.AltGeom.HasValue      ? a.AltGeom.Value * 0.3048      : null, // feet → m
+            NavAltitudeMeters   = a.NavAltitudeMcp.HasValue ? a.NavAltitudeMcp.Value * 0.3048 : null, // feet → m
+            WindDirectionDeg    = a.Wd,
+            WindSpeedKnots      = a.Ws,
+            OutsideAirTempC     = a.Oat,
+            AircraftDescription = a.Desc,
         };
     }
 }

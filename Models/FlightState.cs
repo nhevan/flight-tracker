@@ -15,6 +15,17 @@ public sealed class FlightState
 
     /// <summary>Straight-line surface distance from home to the flight's reported position, in km.</summary>
     public double? DistanceKm { get; init; }
+
+    // ── Additional fields from airplanes.live ────────────────────────────────
+    public string?  Squawk              { get; init; }  // Mode A transponder code e.g. "7700"
+    public string?  Emergency           { get; init; }  // "none" | "general" | "lifeguard" | "minfuel" | "nordo" | "unlawful" | "downed"
+    public bool     IsMilitary          { get; init; }  // true when dbFlags bit 1 is set
+    public double?  AltGeomMeters       { get; init; }  // Geometric (GPS) altitude in metres
+    public double?  NavAltitudeMeters   { get; init; }  // Autopilot MCP-selected altitude in metres
+    public double?  WindDirectionDeg    { get; init; }  // Calculated wind direction (degrees)
+    public double?  WindSpeedKnots      { get; init; }  // Calculated wind speed (knots)
+    public double?  OutsideAirTempC     { get; init; }  // Calculated outside air temperature (°C)
+    public string?  AircraftDescription { get; init; }  // Aircraft description e.g. "Boeing 787-9"
 }
 
 public static class Haversine
@@ -68,6 +79,33 @@ internal sealed class AirplanesLiveAircraft
 
     [System.Text.Json.Serialization.JsonPropertyName("baro_rate")]
     public double? BaroRate { get; set; } // vertical rate, ft/min
+
+    [System.Text.Json.Serialization.JsonPropertyName("squawk")]
+    public string? Squawk { get; set; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("emergency")]
+    public string? Emergency { get; set; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("dbFlags")]
+    public int DbFlags { get; set; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("alt_geom")]
+    public double? AltGeom { get; set; }              // geometric altitude, feet
+
+    [System.Text.Json.Serialization.JsonPropertyName("nav_altitude_mcp")]
+    public double? NavAltitudeMcp { get; set; }       // MCP-selected altitude, feet
+
+    [System.Text.Json.Serialization.JsonPropertyName("wd")]
+    public double? Wd { get; set; }                   // wind direction, degrees
+
+    [System.Text.Json.Serialization.JsonPropertyName("ws")]
+    public double? Ws { get; set; }                   // wind speed, knots
+
+    [System.Text.Json.Serialization.JsonPropertyName("oat")]
+    public double? Oat { get; set; }                  // outside air temp, °C
+
+    [System.Text.Json.Serialization.JsonPropertyName("desc")]
+    public string? Desc { get; set; }                 // aircraft description e.g. "Boeing 787-9"
 }
 
 // Internal: adsbdb.com /v0/callsign/{callsign} response.
