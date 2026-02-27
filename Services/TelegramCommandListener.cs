@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Net.Http.Json;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using FlightTracker.Configuration;
 using FlightTracker.Data;
@@ -16,6 +17,11 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
     private readonly TelegramSettings _settings;
     private readonly IFlightLoggingService _loggingService;
     private readonly HttpClient _httpClient;
+
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true
+    };
 
     public TelegramCommandListener(
         AppSettings settings,
@@ -51,8 +57,15 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
                 string url = $"https://api.telegram.org/bot{_settings.BotToken}" +
                              $"/getUpdates?offset={offset}&timeout=30&allowed_updates=[\"message\"]";
 
-                var response = await _httpClient.GetFromJsonAsync<TelegramUpdatesResponse>(
-                    url, cancellationToken);
+                using var httpResponse = await _httpClient.GetAsync(url, cancellationToken);
+                if (!httpResponse.IsSuccessStatusCode)
+                {
+                    string errBody = await httpResponse.Content.ReadAsStringAsync(cancellationToken);
+                    throw new HttpRequestException(errBody, null, httpResponse.StatusCode);
+                }
+
+                var response = await httpResponse.Content.ReadFromJsonAsync<TelegramUpdatesResponse>(
+                    JsonOptions, cancellationToken);
 
                 if (response?.Result is null) continue;
 
@@ -76,11 +89,25 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
             }
             catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Conflict)
             {
-                // 409: webhook still active or another instance is polling
-                Console.WriteLine("[TelegramListener] 409 Conflict — another instance may be running " +
-                                  "or a webhook is still active. Clearing webhook and retrying in 30s...");
-                await DeleteWebhookAsync(cancellationToken);
-                try { await Task.Delay(30_000, cancellationToken); } catch { break; }
+                // Telegram returns 409 for two distinct reasons — handle each differently.
+                if (ex.Message.Contains("terminated by other getUpdates"))
+                {
+                    // Another bot instance is actively long-polling the same token.
+                    // deleteWebhook is a no-op here; only stopping the other process helps.
+                    Console.WriteLine("[TelegramListener] 409 — another instance is already polling " +
+                                      "this bot token. Check for duplicate processes on EC2: " +
+                                      "`ps aux | grep dotnet`. Backing off 60s...");
+                    try { await Task.Delay(60_000, cancellationToken); } catch { break; }
+                }
+                else
+                {
+                    // A webhook is set (externally or from a previous deployment).
+                    // deleteWebhook clears it; retry after 30s.
+                    Console.WriteLine($"[TelegramListener] 409 — webhook is active ({ex.Message}). " +
+                                      "Clearing webhook and retrying in 30s...");
+                    await DeleteWebhookAsync(cancellationToken);
+                    try { await Task.Delay(30_000, cancellationToken); } catch { break; }
+                }
             }
             catch (Exception ex)
             {
