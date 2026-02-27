@@ -18,6 +18,8 @@ public interface IFlightLoggingService
         EnrichedFlightState flight,
         string direction,
         double? etaSeconds,
+        double homeLat,
+        double homeLon,
         DateTimeOffset timestamp,
         CancellationToken cancellationToken = default);
 

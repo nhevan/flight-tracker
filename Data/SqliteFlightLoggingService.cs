@@ -8,6 +8,8 @@ public sealed class SqliteFlightLoggingService : IFlightLoggingService
 {
     private readonly string _connectionString;
     private readonly string _dbPath;
+    private readonly double _homeLat;
+    private readonly double _homeLon;
 
     public SqliteFlightLoggingService(AppSettings settings)
     {
@@ -20,6 +22,8 @@ public sealed class SqliteFlightLoggingService : IFlightLoggingService
 
         Directory.CreateDirectory(Path.GetDirectoryName(_dbPath)!);
         _connectionString = $"Data Source={_dbPath}";
+        _homeLat          = settings.HomeLocation.Latitude;
+        _homeLon          = settings.HomeLocation.Longitude;
     }
 
     // ── Schema ────────────────────────────────────────────────────────────────
@@ -54,6 +58,8 @@ public sealed class SqliteFlightLoggingService : IFlightLoggingService
                 OriginIata          TEXT,
                 DestIata            TEXT,
                 RouteDistanceKm     REAL,
+                HomeLat             REAL,
+                HomeLon             REAL,
                 Squawk              TEXT,
                 Emergency           TEXT,
                 IsMilitary          INTEGER,
@@ -82,6 +88,8 @@ public sealed class SqliteFlightLoggingService : IFlightLoggingService
             ("WindSpeedKnots",    "REAL"),
             ("OutsideAirTempC",   "REAL"),
             ("AircraftDesc",      "TEXT"),
+            ("HomeLat",           "REAL"),
+            ("HomeLon",           "REAL"),
         };
         foreach (var (name, type) in newColumns)
         {
@@ -94,6 +102,18 @@ public sealed class SqliteFlightLoggingService : IFlightLoggingService
             catch { /* column already exists — safe to ignore */ }
         }
 
+        // Backfill home coordinates for rows logged before this column was added.
+        // Safe and idempotent — subsequent runs update nothing (WHERE matches no rows).
+        using var backfill = conn.CreateCommand();
+        backfill.CommandText = """
+            UPDATE FlightSightings
+            SET HomeLat = $homeLat, HomeLon = $homeLon
+            WHERE HomeLat IS NULL
+            """;
+        backfill.Parameters.AddWithValue("$homeLat", _homeLat);
+        backfill.Parameters.AddWithValue("$homeLon", _homeLon);
+        await backfill.ExecuteNonQueryAsync(cancellationToken);
+
         Console.WriteLine($"[FlightLog] Database ready: {_dbPath}");
     }
 
@@ -104,6 +124,8 @@ public sealed class SqliteFlightLoggingService : IFlightLoggingService
         EnrichedFlightState flight,
         string direction,
         double? etaSeconds,
+        double homeLat,
+        double homeLon,
         DateTimeOffset timestamp,
         CancellationToken cancellationToken = default)
     {
@@ -122,6 +144,7 @@ public sealed class SqliteFlightLoggingService : IFlightLoggingService
                     Direction, EtaSeconds,
                     TypeCode, Registration, Operator, Category,
                     OriginIata, DestIata, RouteDistanceKm,
+                    HomeLat, HomeLon,
                     Squawk, Emergency, IsMilitary,
                     AltGeomMeters, NavAltitudeMeters,
                     WindDirectionDeg, WindSpeedKnots, OutsideAirTempC,
@@ -133,6 +156,7 @@ public sealed class SqliteFlightLoggingService : IFlightLoggingService
                     $direction, $etaSeconds,
                     $typeCode, $registration, $operator, $category,
                     $originIata, $destIata, $routeDistanceKm,
+                    $homeLat, $homeLon,
                     $squawk, $emergency, $isMilitary,
                     $altGeomMeters, $navAltitudeMeters,
                     $windDirectionDeg, $windSpeedKnots, $outsideAirTempC,
@@ -162,6 +186,8 @@ public sealed class SqliteFlightLoggingService : IFlightLoggingService
             cmd.Parameters.AddWithValue("$originIata",       flight.Route?.OriginIata as object ?? DBNull.Value);
             cmd.Parameters.AddWithValue("$destIata",         flight.Route?.DestIata as object ?? DBNull.Value);
             cmd.Parameters.AddWithValue("$routeDistanceKm",  flight.Route?.RouteDistanceKm as object ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("$homeLat",           homeLat);
+            cmd.Parameters.AddWithValue("$homeLon",           homeLon);
             cmd.Parameters.AddWithValue("$squawk",           f.Squawk as object ?? DBNull.Value);
             cmd.Parameters.AddWithValue("$emergency",        f.Emergency as object ?? DBNull.Value);
             cmd.Parameters.AddWithValue("$isMilitary",       f.IsMilitary ? 1 : DBNull.Value);

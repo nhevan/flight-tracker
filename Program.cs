@@ -181,7 +181,7 @@ while (!cts.Token.IsCancellationRequested)
                 // Query BEFORE logging so the count reflects prior visits only
                 var visitorInfo = await repeatVisitorService.GetVisitorInfoAsync(f.Icao24, cts.Token);
                 await telegramService.NotifyAsync(ef, dir ?? "Towards", etaSecs, visitorInfo, cts.Token);
-                await loggingService.LogAsync(ef, dir ?? "Towards", etaSecs, DateTimeOffset.UtcNow, cts.Token);
+                await loggingService.LogAsync(ef, dir ?? "Towards", etaSecs, homeLat, homeLon, DateTimeOffset.UtcNow, cts.Token);
                 notifiedIcaos.Add(f.Icao24);
             }
         }
