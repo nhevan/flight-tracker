@@ -90,6 +90,10 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
                     {
                         await HandleSpotCommandAsync(update.Message!.Chat.Id, text, cancellationToken);
                     }
+                    else if (text.StartsWith("/range", StringComparison.OrdinalIgnoreCase))
+                    {
+                        await HandleRangeCommandAsync(update.Message!.Chat.Id, text, cancellationToken);
+                    }
                     else if (text.Equals("/test", StringComparison.OrdinalIgnoreCase))
                     {
                         await HandleTestCommandAsync(update.Message!.Chat.Id, cancellationToken);
@@ -237,6 +241,49 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
                           (name is not null ? $" \"{name}\"" : ""));
     }
 
+    private async Task HandleRangeCommandAsync(long chatId, string text, CancellationToken cancellationToken)
+    {
+        var ic = CultureInfo.InvariantCulture;
+
+        string[] parts = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length < 2)
+        {
+            await SendMessageAsync(chatId,
+                "Usage: /range &lt;km&gt;\n" +
+                "Example: /range 50   (use 0 for unlimited)",
+                cancellationToken);
+            return;
+        }
+
+        if (!double.TryParse(parts[1], NumberStyles.Float, ic, out double rangeKm) || rangeKm < 0)
+        {
+            await SendMessageAsync(chatId,
+                $"❌ Invalid range <code>{EscapeHtml(parts[1])}</code> — must be a number ≥ 0 (use 0 for unlimited).",
+                cancellationToken);
+            return;
+        }
+
+        _homeLocation.VisualRangeKm = rangeKm;
+
+        bool saved = PersistRangeToSettings(rangeKm);
+
+        string rangeLabel = rangeKm > 0
+            ? $"<b>{rangeKm.ToString("F0", ic)} km</b>  (flights beyond this distance are ignored)"
+            : "<b>Unlimited</b>  (all flights in the bounding box are shown)";
+
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("📡 <b>Visual range updated</b>");
+        sb.AppendLine();
+        sb.AppendLine(rangeLabel);
+        sb.AppendLine();
+        sb.Append(saved
+            ? "💾 Range saved — persists after restarts."
+            : "⚠️ Could not write to appsettings.json — range active now but will reset on restart.");
+
+        await SendMessageAsync(chatId, sb.ToString(), cancellationToken);
+        Console.WriteLine($"[TelegramListener] /range command: VisualRangeKm set to {rangeKm:F0}");
+    }
+
     private async Task HandleTestCommandAsync(long chatId, CancellationToken cancellationToken)
     {
         try
@@ -347,6 +394,32 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
         catch (Exception ex)
         {
             Console.WriteLine($"[TelegramListener] Could not persist spot to appsettings.json: {ex.Message}");
+            return false;
+        }
+    }
+
+    private static bool PersistRangeToSettings(double rangeKm)
+    {
+        try
+        {
+            string path = Path.Combine(AppContext.BaseDirectory, "appsettings.json");
+            if (!File.Exists(path)) return false;
+
+            var root = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+            var loc  = root["HomeLocation"]?.AsObject()
+                       ?? new System.Text.Json.Nodes.JsonObject();
+
+            loc["VisualRangeKm"]  = rangeKm;
+            root["HomeLocation"]  = loc;
+            File.WriteAllText(path, root.ToJsonString(
+                new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+
+            Console.WriteLine($"[TelegramListener] /range persisted to appsettings.json");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[TelegramListener] Could not persist range to appsettings.json: {ex.Message}");
             return false;
         }
     }
