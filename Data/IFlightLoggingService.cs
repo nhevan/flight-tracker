@@ -36,4 +36,10 @@ public interface IFlightLoggingService
     /// Returns the distinct non-empty spot names recorded in FlightSightings, sorted alphabetically.
     /// </summary>
     Task<IReadOnlyList<string>> GetKnownSpotNamesAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns the most recent lat/lon recorded for the given spot name (case-insensitive),
+    /// or null if no sightings exist for that name.
+    /// </summary>
+    Task<(double Lat, double Lon)?> GetSpotByNameAsync(string name, CancellationToken cancellationToken = default);
 }

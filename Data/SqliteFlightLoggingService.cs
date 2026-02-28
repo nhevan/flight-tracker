@@ -283,6 +283,27 @@ public sealed class SqliteFlightLoggingService : IFlightLoggingService
         return names;
     }
 
+    /// <inheritdoc/>
+    public async Task<(double Lat, double Lon)?> GetSpotByNameAsync(string name, CancellationToken cancellationToken = default)
+    {
+        using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync(cancellationToken);
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT HomeLat, HomeLon
+            FROM FlightSightings
+            WHERE HomeName = $name COLLATE NOCASE
+              AND HomeLat IS NOT NULL AND HomeLon IS NOT NULL
+            ORDER BY SeenAt DESC
+            LIMIT 1
+            """;
+        cmd.Parameters.AddWithValue("$name", name);
+        using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        if (await reader.ReadAsync(cancellationToken))
+            return (reader.GetDouble(0), reader.GetDouble(1));
+        return null;
+    }
+
     // ── Private query helpers ─────────────────────────────────────────────────
 
     private static async Task<int> QueryScalarIntAsync(

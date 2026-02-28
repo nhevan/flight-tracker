@@ -192,36 +192,71 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
         var ic = CultureInfo.InvariantCulture;
 
         string[] parts = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length < 3)
+        if (parts.Length < 2)
         {
             await SendMessageAsync(chatId,
-                "Usage: /spot &lt;lat&gt; &lt;lon&gt; [name]\n" +
-                "Example: /spot 51.977 4.617 Home Garden",
+                "Usage:\n" +
+                "  /spot &lt;lat&gt; &lt;lon&gt; [name] — set spot by coordinates\n" +
+                "  /spot &lt;name&gt; — switch to a previously named spot\n\n" +
+                "Examples:\n" +
+                "  /spot 51.977 4.617 Home Garden\n" +
+                "  /spot Home Garden",
                 cancellationToken);
             return;
         }
 
-        if (!double.TryParse(parts[1], NumberStyles.Float, ic, out double lat) || lat < -90 || lat > 90)
+        // Determine which variation: if the second token is a number, it's the lat/lon form.
+        bool isCoordForm = double.TryParse(parts[1], NumberStyles.Float, ic, out _);
+
+        double lat, lon;
+        string? name;
+
+        if (isCoordForm)
         {
-            await SendMessageAsync(chatId,
-                $"❌ Invalid latitude <code>{EscapeHtml(parts[1])}</code> — must be a number between −90 and 90.",
-                cancellationToken);
-            return;
+            if (parts.Length < 3)
+            {
+                await SendMessageAsync(chatId,
+                    "Usage: /spot &lt;lat&gt; &lt;lon&gt; [name]\nExample: /spot 51.977 4.617 Home Garden",
+                    cancellationToken);
+                return;
+            }
+
+            if (!double.TryParse(parts[1], NumberStyles.Float, ic, out lat) || lat < -90 || lat > 90)
+            {
+                await SendMessageAsync(chatId,
+                    $"❌ Invalid latitude <code>{EscapeHtml(parts[1])}</code> — must be a number between −90 and 90.",
+                    cancellationToken);
+                return;
+            }
+
+            if (!double.TryParse(parts[2], NumberStyles.Float, ic, out lon) || lon < -180 || lon > 180)
+            {
+                await SendMessageAsync(chatId,
+                    $"❌ Invalid longitude <code>{EscapeHtml(parts[2])}</code> — must be a number between −180 and 180.",
+                    cancellationToken);
+                return;
+            }
+
+            name = parts.Length > 3 ? string.Join(" ", parts[3..]) : null;
+        }
+        else
+        {
+            // Name-lookup form: /spot <name>
+            name = string.Join(" ", parts[1..]);
+            var coords = await _loggingService.GetSpotByNameAsync(name, cancellationToken);
+            if (coords is null)
+            {
+                await SendMessageAsync(chatId,
+                    $"❌ No spot named <b>{EscapeHtml(name)}</b> found. Use /spots to see known spots.",
+                    cancellationToken);
+                return;
+            }
+            (lat, lon) = coords.Value;
         }
 
-        if (!double.TryParse(parts[2], NumberStyles.Float, ic, out double lon) || lon < -180 || lon > 180)
-        {
-            await SendMessageAsync(chatId,
-                $"❌ Invalid longitude <code>{EscapeHtml(parts[2])}</code> — must be a number between −180 and 180.",
-                cancellationToken);
-            return;
-        }
-
-        string? name = parts.Length > 3 ? string.Join(" ", parts[3..]) : null;
-
-        _homeLocation.Latitude             = lat;
-        _homeLocation.Longitude            = lon;
-        _homeLocation.Name                 = name;
+        _homeLocation.Latitude               = lat;
+        _homeLocation.Longitude              = lon;
+        _homeLocation.Name                   = name;
         _homeLocation.LocationResetRequested = true;
 
         bool saved = PersistSpotToSettings(lat, lon, name);
