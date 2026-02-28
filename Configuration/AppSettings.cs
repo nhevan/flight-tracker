@@ -25,7 +25,7 @@ public sealed class HomeLocationSettings
 
     /// <summary>
     /// Optional human-readable name for this spotting location (e.g. "Home", "Roof terrace").
-    /// Not read from appsettings.json — set at runtime by the /spot Telegram command.
+    /// Can be set in appsettings.json and overridden at runtime by the /spot Telegram command.
     /// </summary>
     public string? Name { get; set; }
 
