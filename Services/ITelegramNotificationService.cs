@@ -10,7 +10,8 @@ public interface ITelegramNotificationService
     /// Never throws — all errors are swallowed to keep the tracker alive.
     /// </summary>
     Task NotifyAsync(EnrichedFlightState flight, string direction, double? etaSeconds,
-                     RepeatVisitorInfo? visitorInfo, CancellationToken cancellationToken);
+                     RepeatVisitorInfo? visitorInfo, CancellationToken cancellationToken,
+                     double? previousHeading = null);
 
     /// <summary>
     /// Sends a plain-text status message (startup notice, error alert, etc.).

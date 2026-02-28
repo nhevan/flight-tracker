@@ -185,18 +185,21 @@ while (!cts.Token.IsCancellationRequested)
                 f.Latitude, f.Longitude, effectiveHeading, f.VelocityMetersPerSecond,
                 homeLat, homeLon);
 
+            bool alreadyNotified = notifiedIcaos.TryGetValue(f.Icao24, out double? lastHeading);
+            bool bearingChanged  = FlightDirectionHelper.HeadingChangedSignificantly(lastHeading, effectiveHeading);
+
             if (etaSecs is <= 120.0
                 && f.BarometricAltitudeMeters is not null
                 && f.BarometricAltitudeMeters <= settings.Telegram.MaxAltitudeMeters
-                && (!notifiedIcaos.TryGetValue(f.Icao24, out double? lastHeading)
-                    || FlightDirectionHelper.HeadingChangedSignificantly(lastHeading, effectiveHeading)))
+                && (!alreadyNotified || bearingChanged))
             {
                 string? dir = FlightDirectionHelper.Classify(
                     f.Latitude, f.Longitude, effectiveHeading, f.DistanceKm,
                     homeLat, homeLon);
                 // Query BEFORE logging so the count reflects prior visits only
                 var visitorInfo = await repeatVisitorService.GetVisitorInfoAsync(f.Icao24, cts.Token);
-                await telegramService.NotifyAsync(ef, dir ?? "Towards", etaSecs, visitorInfo, cts.Token);
+                await telegramService.NotifyAsync(ef, dir ?? "Towards", etaSecs, visitorInfo, cts.Token,
+                    previousHeading: bearingChanged ? lastHeading : null);
                 await loggingService.LogAsync(ef, dir ?? "Towards", etaSecs, homeLat, homeLon, settings.HomeLocation.Name, DateTimeOffset.UtcNow, cts.Token);
                 notifiedIcaos[f.Icao24] = effectiveHeading;
             }

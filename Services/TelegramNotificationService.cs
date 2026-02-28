@@ -34,7 +34,8 @@ public sealed class TelegramNotificationService : ITelegramNotificationService
         string direction,
         double? etaSeconds,
         RepeatVisitorInfo? visitorInfo,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        double? previousHeading = null)
     {
         if (!_settings.Enabled
             || string.IsNullOrEmpty(_settings.BotToken)
@@ -44,7 +45,7 @@ public sealed class TelegramNotificationService : ITelegramNotificationService
         try
         {
             var f    = flight.State;
-            string text = BuildMessage(flight, direction, etaSeconds, visitorInfo);
+            string text = BuildMessage(flight, direction, etaSeconds, visitorInfo, previousHeading);
 
             // 1️⃣ Try to get a live map snapshot (fetched server-side to keep token private)
             byte[]? mapBytes = await _mapService.GetSnapshotAsync(
@@ -134,7 +135,8 @@ public sealed class TelegramNotificationService : ITelegramNotificationService
         EnrichedFlightState ef,
         string direction,
         double? etaSeconds,
-        RepeatVisitorInfo? visitorInfo)
+        RepeatVisitorInfo? visitorInfo,
+        double? previousHeading = null)
     {
         var f = ef.State;
 
@@ -143,6 +145,19 @@ public sealed class TelegramNotificationService : ITelegramNotificationService
             : f.Callsign.Trim();
 
         var sb = new System.Text.StringBuilder();
+
+        // ── Course-change banner (shown when a re-notification was triggered by a bearing change)
+        if (previousHeading is not null)
+        {
+            double? currentHeading = ef.EffectiveHeading;
+            double diff = currentHeading is not null
+                ? Math.Abs(previousHeading.Value - currentHeading.Value) % 360.0
+                : 0;
+            if (diff > 180.0) diff = 360.0 - diff;
+            string prevStr = $"{previousHeading.Value:F0}°";
+            string currStr = currentHeading is not null ? $"{currentHeading.Value:F0}°" : "unknown";
+            sb.AppendLine($"↩️ <b>Course change</b> · {prevStr} → {currStr} (Δ{diff:F0}°)");
+        }
 
         // ── Repeat visitor banner (prepended before everything else) ─────────
         // Use registration for a friendlier display name; fall back to ICAO24 hex.
