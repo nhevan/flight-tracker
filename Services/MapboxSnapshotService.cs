@@ -159,8 +159,8 @@ public sealed class MapboxSnapshotService : IMapSnapshotService
         // halfKm so it looks consistent across all zoom levels.
         // Tip is halfDepthKm ahead of the plane; base is halfDepthKm behind — the midpoint
         // of the arrow therefore sits exactly on the plane marker.
-        double arrowDepthKm = halfKm * 0.25;   // full depth of the arrowhead
-        double arrowHalfW   = halfKm * 0.15;   // half-width of the arrow base
+        double arrowDepthKm = halfKm * 0.05;   // full depth of the arrowhead
+        double arrowHalfW   = halfKm * 0.04;   // half-width of the arrow base
         double perpRad      = headingRad + Math.PI / 2.0;
         double halfDepthKm  = arrowDepthKm / 2.0;
 
