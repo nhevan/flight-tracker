@@ -214,12 +214,18 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
         _homeLocation.Name                 = name;
         _homeLocation.LocationResetRequested = true;
 
+        bool saved = PersistSpotToSettings(lat, lon, name);
+
         var sb = new System.Text.StringBuilder();
         sb.AppendLine("📍 <b>Spotting location updated</b>");
         sb.AppendLine();
         if (name is not null)
             sb.AppendLine($"<b>{EscapeHtml(name)}</b>");
         sb.AppendLine($"Lat: {lat.ToString("F6", ic)} · Lon: {lon.ToString("F6", ic)}");
+        sb.AppendLine();
+        sb.AppendLine(saved
+            ? "💾 Spot saved — location persists after restarts."
+            : "⚠️ Could not write to appsettings.json — location active now but will reset on restart.");
         sb.AppendLine();
         sb.AppendLine("Notification state reset — flights near this spot will notify fresh.");
         sb.AppendLine();
@@ -313,6 +319,35 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
         catch (Exception ex)
         {
             Console.WriteLine($"[TelegramListener] Error sending message: {ex.Message}");
+        }
+    }
+
+    private static bool PersistSpotToSettings(double lat, double lon, string? name)
+    {
+        try
+        {
+            string path = Path.Combine(AppContext.BaseDirectory, "appsettings.json");
+            if (!File.Exists(path)) return false;
+
+            var root = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+            var loc  = root["HomeLocation"]?.AsObject()
+                       ?? new System.Text.Json.Nodes.JsonObject();
+
+            loc["Latitude"]  = lat;
+            loc["Longitude"] = lon;
+            loc["Name"]      = name;
+
+            root["HomeLocation"] = loc;
+            File.WriteAllText(path, root.ToJsonString(
+                new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+
+            Console.WriteLine($"[TelegramListener] /spot persisted to appsettings.json");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[TelegramListener] Could not persist spot to appsettings.json: {ex.Message}");
+            return false;
         }
     }
 
