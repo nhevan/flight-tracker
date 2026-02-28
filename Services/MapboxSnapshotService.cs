@@ -162,20 +162,26 @@ public sealed class MapboxSnapshotService : IMapSnapshotService
         double latGapBwd = planeLat - (gapKm / 111.0) * Math.Cos(headingRad);
         double lonGapBwd = planeLon - (gapKm / 111.0) * Math.Sin(headingRad) / cosLat;
 
-        // Arrowhead triangle centred on the plane's current position — size scales with
-        // halfKm so it looks consistent across all zoom levels.
-        // Tip is halfDepthKm ahead of the plane; base is halfDepthKm behind — the midpoint
-        // of the arrow therefore sits exactly on the plane marker.
+        // Closest point on the trajectory line to home — used to centre the arrowhead on
+        // the visible portion of the line rather than on the (potentially off-map) plane.
+        double dxToHome       = (homeLon - planeLon) * cosLat * 111.0;
+        double dyToHome       = (homeLat - planeLat) * 111.0;
+        double arrowProjKm    = dxToHome * Math.Sin(headingRad) + dyToHome * Math.Cos(headingRad);
+        double arrowCenterLat = planeLat + (arrowProjKm / 111.0) * Math.Cos(headingRad);
+        double arrowCenterLon = planeLon + (arrowProjKm / 111.0) * Math.Sin(headingRad) / cosLat;
+
+        // Arrowhead triangle centred on the closest-approach point to home — size scales
+        // with halfKm so it looks consistent across all zoom levels.
         double arrowDepthKm = halfKm * 0.03;   // full depth of the arrowhead
         double arrowHalfW   = halfKm * 0.025;  // half-width of the arrow base
         double perpRad      = headingRad + Math.PI / 2.0;
         double halfDepthKm  = arrowDepthKm / 2.0;
 
-        double latTip   = planeLat + (halfDepthKm / 111.0) * Math.Cos(headingRad);
-        double lonTip   = planeLon + (halfDepthKm / 111.0) * Math.Sin(headingRad) / cosLat;
+        double latTip   = arrowCenterLat + (halfDepthKm / 111.0) * Math.Cos(headingRad);
+        double lonTip   = arrowCenterLon + (halfDepthKm / 111.0) * Math.Sin(headingRad) / cosLat;
 
-        double latBase  = planeLat - (halfDepthKm / 111.0) * Math.Cos(headingRad);
-        double lonBase  = planeLon - (halfDepthKm / 111.0) * Math.Sin(headingRad) / cosLat;
+        double latBase  = arrowCenterLat - (halfDepthKm / 111.0) * Math.Cos(headingRad);
+        double lonBase  = arrowCenterLon - (halfDepthKm / 111.0) * Math.Sin(headingRad) / cosLat;
 
         double latRight = latBase + (arrowHalfW / 111.0) * Math.Cos(perpRad);
         double lonRight = lonBase + (arrowHalfW / 111.0) * Math.Sin(perpRad) / cosLat;
