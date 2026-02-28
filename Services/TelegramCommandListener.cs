@@ -53,7 +53,7 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
         await DeleteWebhookAsync(cancellationToken);
 
         long offset = 0;
-        Console.WriteLine("[TelegramListener] Listening for commands (/stats, /spot, /test)...");
+        Console.WriteLine("[TelegramListener] Listening for commands (/stats, /spot, /spots, /range, /test)...");
 
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -85,6 +85,10 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
                         text.Equals("/stats", StringComparison.OrdinalIgnoreCase))
                     {
                         await HandleStatsCommandAsync(update.Message!.Chat.Id, cancellationToken);
+                    }
+                    else if (text.Equals("/spots", StringComparison.OrdinalIgnoreCase))
+                    {
+                        await HandleSpotsCommandAsync(update.Message!.Chat.Id, cancellationToken);
                     }
                     else if (text.StartsWith("/spot", StringComparison.OrdinalIgnoreCase))
                     {
@@ -284,6 +288,25 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
 
         await SendMessageAsync(chatId, sb.ToString(), cancellationToken);
         Console.WriteLine($"[TelegramListener] /range command: VisualRangeKm set to {rangeKm:F0}");
+    }
+
+    private async Task HandleSpotsCommandAsync(long chatId, CancellationToken cancellationToken)
+    {
+        var names = await _loggingService.GetKnownSpotNamesAsync(cancellationToken);
+
+        // Also surface the current active spot even if no flights have been logged there yet.
+        var allNames = names.ToList();
+        if (!string.IsNullOrWhiteSpace(_homeLocation.Name) &&
+            !allNames.Contains(_homeLocation.Name, StringComparer.OrdinalIgnoreCase))
+        {
+            allNames.Insert(0, _homeLocation.Name);
+        }
+
+        string body = allNames.Count == 0
+            ? "No named spots found. Set one with <code>/spot &lt;lat&gt; &lt;lon&gt; &lt;name&gt;</code>."
+            : string.Join("\n", allNames.Select(n => $"• {n}"));
+
+        await SendMessageAsync(chatId, $"<b>Known spots</b>\n{body}", cancellationToken);
     }
 
     private async Task HandleTestCommandAsync(long chatId, CancellationToken cancellationToken)

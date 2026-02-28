@@ -262,6 +262,27 @@ public sealed class SqliteFlightLoggingService : IFlightLoggingService
             CurrentStreakHours:      currentStreak);
     }
 
+    // ── Spots ─────────────────────────────────────────────────────────────────
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<string>> GetKnownSpotNamesAsync(CancellationToken cancellationToken = default)
+    {
+        using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync(cancellationToken);
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT DISTINCT HomeName
+            FROM FlightSightings
+            WHERE HomeName IS NOT NULL AND HomeName != ''
+            ORDER BY HomeName
+            """;
+        using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        var names = new List<string>();
+        while (await reader.ReadAsync(cancellationToken))
+            names.Add(reader.GetString(0));
+        return names;
+    }
+
     // ── Private query helpers ─────────────────────────────────────────────────
 
     private static async Task<int> QueryScalarIntAsync(

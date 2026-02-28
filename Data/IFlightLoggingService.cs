@@ -31,4 +31,9 @@ public interface IFlightLoggingService
         double homeLat,
         double homeLon,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns the distinct non-empty spot names recorded in FlightSightings, sorted alphabetically.
+    /// </summary>
+    Task<IReadOnlyList<string>> GetKnownSpotNamesAsync(CancellationToken cancellationToken = default);
 }
