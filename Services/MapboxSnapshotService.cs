@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using FlightTracker.Configuration;
 
 namespace FlightTracker.Services;
@@ -63,8 +64,15 @@ public sealed class MapboxSnapshotService : IMapSnapshotService
                          $"/{ImageWidth}x{ImageHeight}@2x" +
                          $"?access_token={Uri.EscapeDataString(_settings.AccessToken)}";
 
+            Console.WriteLine($"[MapSnapshot] URL: {url.Replace(_settings.AccessToken, "***")}");
+
             var response = await _httpClient.GetAsync(url, cancellationToken);
-            response.EnsureSuccessStatusCode();
+            if (!response.IsSuccessStatusCode)
+            {
+                string body = await response.Content.ReadAsStringAsync(cancellationToken);
+                Console.WriteLine($"[MapSnapshot] Mapbox error {(int)response.StatusCode}: {body}");
+                return null;
+            }
             return await response.Content.ReadAsByteArrayAsync(cancellationToken);
         }
         catch (Exception ex)
@@ -156,45 +164,60 @@ public sealed class MapboxSnapshotService : IMapSnapshotService
         double latLeft  = latBase - (arrowHalfW / 111.0) * Math.Cos(perpRad);
         double lonLeft  = lonBase - (arrowHalfW / 111.0) * Math.Sin(perpRad) / cosLat;
 
-        // FeatureCollection: trajectory LineString + arrowhead Polygon at the forward tip
-        var geoJson = new
+        // FeatureCollection: trajectory LineString + arrowhead Polygon at the forward tip.
+        // Built with JsonObject/JsonArray so property names with hyphens (stroke-width etc.)
+        // are written directly — no fragile string-replace post-processing needed.
+        static JsonArray Coord(double lon, double lat) => new() { lon, lat };
+
+        var geoJson = new JsonObject
         {
-            type = "FeatureCollection",
-            features = new object[]
+            ["type"] = "FeatureCollection",
+            ["features"] = new JsonArray
             {
                 // Orange trajectory line: behind → plane → ahead
-                new
+                new JsonObject
                 {
-                    type       = "Feature",
-                    properties = new { stroke = "#ffaa00", stroke_width = 3, stroke_opacity = 0.9 },
-                    geometry   = new
+                    ["type"] = "Feature",
+                    ["properties"] = new JsonObject
                     {
-                        type        = "LineString",
-                        coordinates = new[]
+                        ["stroke"]         = "#ffaa00",
+                        ["stroke-width"]   = 3,
+                        ["stroke-opacity"] = 0.9
+                    },
+                    ["geometry"] = new JsonObject
+                    {
+                        ["type"] = "LineString",
+                        ["coordinates"] = new JsonArray
                         {
-                            new[] { lonBwd,   latBwd   },   // behind
-                            new[] { planeLon, planeLat },   // plane now
-                            new[] { lonFwd,   latFwd   }    // ahead
+                            Coord(lonBwd,   latBwd),
+                            Coord(planeLon, planeLat),
+                            Coord(lonFwd,   latFwd)
                         }
                     }
                 },
                 // Filled arrowhead triangle pointing in the direction of travel
-                new
+                new JsonObject
                 {
-                    type       = "Feature",
-                    properties = new { fill = "#ffaa00", fill_opacity = 0.9,
-                                       stroke = "#ffaa00", stroke_width = 1, stroke_opacity = 0.9 },
-                    geometry   = new
+                    ["type"] = "Feature",
+                    ["properties"] = new JsonObject
                     {
-                        type        = "Polygon",
-                        coordinates = new[]
+                        ["fill"]           = "#ffaa00",
+                        ["fill-opacity"]   = 0.9,
+                        ["stroke"]         = "#ffaa00",
+                        ["stroke-width"]   = 1,
+                        ["stroke-opacity"] = 0.9
+                    },
+                    ["geometry"] = new JsonObject
+                    {
+                        ["type"] = "Polygon",
+                        ["coordinates"] = new JsonArray
                         {
-                            new[]
+                            new JsonArray   // outer ring
                             {
-                                new[] { lonFwd,   latFwd   },   // tip
-                                new[] { lonRight, latRight },   // right base corner
-                                new[] { lonLeft,  latLeft  },   // left base corner
-                                new[] { lonFwd,   latFwd   }    // close ring
+                                Coord(lonFwd,   latFwd),    // tip
+                                Coord(lonRight, latRight),  // right base corner
+                                Coord(lonLeft,  latLeft),   // left base corner
+                                Coord(lonFwd,   latFwd)     // close ring
                             }
                         }
                     }
@@ -202,13 +225,8 @@ public sealed class MapboxSnapshotService : IMapSnapshotService
             }
         };
 
-        string geoJsonStr = JsonSerializer.Serialize(geoJson,
-            new JsonSerializerOptions { PropertyNamingPolicy = null });
-
-        // JsonSerializer writes underscores; Mapbox GeoJSON spec requires hyphens
-        geoJsonStr = geoJsonStr.Replace("stroke_width",   "stroke-width")
-                               .Replace("stroke_opacity", "stroke-opacity")
-                               .Replace("fill_opacity",   "fill-opacity");
+        string geoJsonStr = geoJson.ToJsonString();
+        Console.WriteLine($"[MapSnapshot] GeoJSON: {geoJsonStr}");
 
         string encodedGeoJson = Uri.EscapeDataString(geoJsonStr);
 
