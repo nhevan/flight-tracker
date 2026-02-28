@@ -17,6 +17,7 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
     private readonly TelegramSettings _settings;
     private readonly HomeLocationSettings _homeLocation;
     private readonly IFlightLoggingService _loggingService;
+    private readonly ITelegramNotificationService _notificationService;
     private readonly HttpClient _httpClient;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -27,13 +28,15 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
     public TelegramCommandListener(
         AppSettings settings,
         IFlightLoggingService loggingService,
-        IHttpClientFactory httpClientFactory)
+        IHttpClientFactory httpClientFactory,
+        ITelegramNotificationService notificationService)
     {
-        _settings       = settings.Telegram;
-        _homeLocation   = settings.HomeLocation;
-        _loggingService = loggingService;
-        _httpClient     = httpClientFactory.CreateClient("TelegramListener");
-        _httpClient.Timeout = TimeSpan.FromSeconds(40); // > long-poll timeout
+        _settings             = settings.Telegram;
+        _homeLocation         = settings.HomeLocation;
+        _loggingService       = loggingService;
+        _notificationService  = notificationService;
+        _httpClient           = httpClientFactory.CreateClient("TelegramListener");
+        _httpClient.Timeout   = TimeSpan.FromSeconds(40); // > long-poll timeout
     }
 
     /// <inheritdoc/>
@@ -50,7 +53,7 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
         await DeleteWebhookAsync(cancellationToken);
 
         long offset = 0;
-        Console.WriteLine("[TelegramListener] Listening for commands (/stats, /spot)...");
+        Console.WriteLine("[TelegramListener] Listening for commands (/stats, /spot, /test)...");
 
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -86,6 +89,10 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
                     else if (text.StartsWith("/spot", StringComparison.OrdinalIgnoreCase))
                     {
                         await HandleSpotCommandAsync(update.Message!.Chat.Id, text, cancellationToken);
+                    }
+                    else if (text.Equals("/test", StringComparison.OrdinalIgnoreCase))
+                    {
+                        await HandleTestCommandAsync(update.Message!.Chat.Id, cancellationToken);
                     }
                 }
             }
@@ -218,6 +225,72 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
         await SendMessageAsync(chatId, sb.ToString(), cancellationToken);
         Console.WriteLine($"[TelegramListener] /spot command: location set to ({lat:F6}, {lon:F6})" +
                           (name is not null ? $" \"{name}\"" : ""));
+    }
+
+    private async Task HandleTestCommandAsync(long chatId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            // Place the test plane ~15 km north of home heading due south (toward home)
+            double testLat = _homeLocation.Latitude + 0.135;
+            double testLon = _homeLocation.Longitude;
+            double distKm  = Haversine.DistanceKm(
+                testLat, testLon, _homeLocation.Latitude, _homeLocation.Longitude);
+
+            var state = new FlightState
+            {
+                Icao24                      = "aabbcc",
+                Callsign                    = "TST1234",
+                OriginCountry               = "Netherlands",
+                Latitude                    = testLat,
+                Longitude                   = testLon,
+                BarometricAltitudeMeters    = 6000,
+                OnGround                    = false,
+                VelocityMetersPerSecond     = 230,      // ≈ 828 km/h
+                HeadingDegrees              = 180,      // due south
+                VerticalRateMetersPerSecond = -5,
+                DistanceKm                  = distKm,
+                AircraftDescription         = "Airbus A320-200",
+                WindDirectionDeg            = 270,
+                WindSpeedKnots              = 15,
+                OutsideAirTempC             = -25,
+            };
+
+            var route = new FlightRoute(
+                OriginIcao: "EHAM", OriginIata: "AMS",
+                OriginName: "Amsterdam Airport Schiphol",
+                OriginLat: 52.308, OriginLon: 4.764,
+                DestIcao:  "EGLL", DestIata:  "LHR",
+                DestName:  "London Heathrow Airport",
+                DestLat:   51.477, DestLon:  -0.461,
+                RouteDistanceKm: 370);
+
+            var aircraft = new AircraftInfo(
+                TypeCode:     "A320",
+                Registration: "PH-TEST",
+                Operator:     "Test Airways",
+                Category:     "Narrow-body Jet");
+
+            var flight = new EnrichedFlightState(
+                State:         state,
+                Route:         route,
+                Aircraft:      aircraft,
+                PhotoUrl:      null,    // exercises the map-only send path
+                AircraftFacts: null);
+
+            double etaSeconds = distKm * 1000.0 / state.VelocityMetersPerSecond!.Value;
+
+            await _notificationService.NotifyAsync(
+                flight, "Towards", etaSeconds, visitorInfo: null, cancellationToken);
+
+            await SendMessageAsync(chatId, "✅ Test notification sent!", cancellationToken);
+            Console.WriteLine("[TelegramListener] /test command: synthetic notification sent.");
+        }
+        catch (Exception ex)
+        {
+            await SendMessageAsync(chatId, $"❌ Test failed: {EscapeHtml(ex.Message)}", cancellationToken);
+            Console.WriteLine($"[TelegramListener] /test error: {ex.Message}");
+        }
     }
 
     private async Task SendMessageAsync(long chatId, string html, CancellationToken cancellationToken)
