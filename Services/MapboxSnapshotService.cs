@@ -155,14 +155,20 @@ public sealed class MapboxSnapshotService : IMapSnapshotService
         double latBwd = planeLat - (halfKm / 111.0) * Math.Cos(headingRad);
         double lonBwd = planeLon - (halfKm / 111.0) * Math.Sin(headingRad) / cosLat;
 
-        // Arrowhead triangle at the forward tip — size scales with halfKm so it looks
-        // consistent across all zoom levels
-        double arrowDepthKm = halfKm * 0.25;   // how far back from tip to the base
+        // Arrowhead triangle centred on the plane's current position — size scales with
+        // halfKm so it looks consistent across all zoom levels.
+        // Tip is halfDepthKm ahead of the plane; base is halfDepthKm behind — the midpoint
+        // of the arrow therefore sits exactly on the plane marker.
+        double arrowDepthKm = halfKm * 0.25;   // full depth of the arrowhead
         double arrowHalfW   = halfKm * 0.15;   // half-width of the arrow base
         double perpRad      = headingRad + Math.PI / 2.0;
+        double halfDepthKm  = arrowDepthKm / 2.0;
 
-        double latBase  = latFwd - (arrowDepthKm / 111.0) * Math.Cos(headingRad);
-        double lonBase  = lonFwd - (arrowDepthKm / 111.0) * Math.Sin(headingRad) / cosLat;
+        double latTip   = planeLat + (halfDepthKm / 111.0) * Math.Cos(headingRad);
+        double lonTip   = planeLon + (halfDepthKm / 111.0) * Math.Sin(headingRad) / cosLat;
+
+        double latBase  = planeLat - (halfDepthKm / 111.0) * Math.Cos(headingRad);
+        double lonBase  = planeLon - (halfDepthKm / 111.0) * Math.Sin(headingRad) / cosLat;
 
         double latRight = latBase + (arrowHalfW / 111.0) * Math.Cos(perpRad);
         double lonRight = lonBase + (arrowHalfW / 111.0) * Math.Sin(perpRad) / cosLat;
@@ -170,7 +176,7 @@ public sealed class MapboxSnapshotService : IMapSnapshotService
         double latLeft  = latBase - (arrowHalfW / 111.0) * Math.Cos(perpRad);
         double lonLeft  = lonBase - (arrowHalfW / 111.0) * Math.Sin(perpRad) / cosLat;
 
-        // FeatureCollection: trajectory LineString + arrowhead Polygon at the forward tip.
+        // FeatureCollection: trajectory LineString + arrowhead Polygon centred on plane.
         // Built with JsonObject/JsonArray so property names with hyphens (stroke-width etc.)
         // are written directly — no fragile string-replace post-processing needed.
         static JsonArray Coord(double lon, double lat) => new() { lon, lat };
@@ -220,10 +226,10 @@ public sealed class MapboxSnapshotService : IMapSnapshotService
                         {
                             new JsonArray   // outer ring
                             {
-                                Coord(lonFwd,   latFwd),    // tip
+                                Coord(lonTip,   latTip),    // tip (half-depth ahead of plane)
                                 Coord(lonRight, latRight),  // right base corner
                                 Coord(lonLeft,  latLeft),   // left base corner
-                                Coord(lonFwd,   latFwd)     // close ring
+                                Coord(lonTip,   latTip)     // close ring
                             }
                         }
                     }
