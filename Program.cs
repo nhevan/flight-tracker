@@ -109,8 +109,11 @@ TimeSpan pollInterval = TimeSpan.FromSeconds(settings.Polling.IntervalSeconds);
 var previousPositions = new Dictionary<string, (double Lat, double Lon)>(
     StringComparer.OrdinalIgnoreCase);
 
-// Tracks flights already notified via Telegram (avoids repeat messages per pass)
-var notifiedIcaos = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+// Tracks flights already notified via Telegram.
+// Maps ICAO24 → effective heading at the time the notification was sent so a
+// significant bearing change (≥ 45°) can trigger a fresh notification even when
+// the aircraft is still in range.
+var notifiedIcaos = new Dictionary<string, double?>(StringComparer.OrdinalIgnoreCase);
 
 // Error notification snooze — avoids Telegram spam on repeated failures
 DateTimeOffset? lastErrorNotifiedAt = null;
@@ -185,7 +188,8 @@ while (!cts.Token.IsCancellationRequested)
             if (etaSecs is <= 120.0
                 && f.BarometricAltitudeMeters is not null
                 && f.BarometricAltitudeMeters <= settings.Telegram.MaxAltitudeMeters
-                && !notifiedIcaos.Contains(f.Icao24))
+                && (!notifiedIcaos.TryGetValue(f.Icao24, out double? lastHeading)
+                    || FlightDirectionHelper.HeadingChangedSignificantly(lastHeading, effectiveHeading)))
             {
                 string? dir = FlightDirectionHelper.Classify(
                     f.Latitude, f.Longitude, effectiveHeading, f.DistanceKm,
@@ -194,12 +198,14 @@ while (!cts.Token.IsCancellationRequested)
                 var visitorInfo = await repeatVisitorService.GetVisitorInfoAsync(f.Icao24, cts.Token);
                 await telegramService.NotifyAsync(ef, dir ?? "Towards", etaSecs, visitorInfo, cts.Token);
                 await loggingService.LogAsync(ef, dir ?? "Towards", etaSecs, homeLat, homeLon, settings.HomeLocation.Name, DateTimeOffset.UtcNow, cts.Token);
-                notifiedIcaos.Add(f.Icao24);
+                notifiedIcaos[f.Icao24] = effectiveHeading;
             }
         }
 
         // Remove flights that left range so they can re-trigger if they return
-        notifiedIcaos.RemoveWhere(icao => !previousPositions.ContainsKey(icao));
+        foreach (var icao in notifiedIcaos.Keys
+            .Where(icao => !previousPositions.ContainsKey(icao)).ToList())
+            notifiedIcaos.Remove(icao);
 
         // Skip the interactive table when stdout is redirected (e.g. systemd journal)
         // — box-drawing characters produce garbled multi-line journal entries.

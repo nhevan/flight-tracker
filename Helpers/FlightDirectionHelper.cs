@@ -114,5 +114,20 @@ public static class FlightDirectionHelper
         return (Math.Atan2(y, x) * 180.0 / Math.PI + 360.0) % 360.0;
     }
 
+    /// <summary>
+    /// Returns <c>true</c> when the bearing has rotated by at least
+    /// <paramref name="thresholdDegrees"/> since the last notification, indicating a
+    /// meaningful direction change that warrants a new alert.
+    /// Returns <c>false</c> when either heading is <c>null</c> (no data to compare).
+    /// </summary>
+    public static bool HeadingChangedSignificantly(
+        double? previous, double? current, double thresholdDegrees = 45.0)
+    {
+        if (previous is null || current is null) return false;
+        double diff = Math.Abs(previous.Value - current.Value) % 360.0;
+        if (diff > 180.0) diff = 360.0 - diff;   // take the shorter arc
+        return diff >= thresholdDegrees;
+    }
+
     private static double ToRad(double deg) => deg * Math.PI / 180.0;
 }
