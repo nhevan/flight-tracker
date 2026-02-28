@@ -155,6 +155,13 @@ public sealed class MapboxSnapshotService : IMapSnapshotService
         double latBwd = planeLat - (halfKm / 111.0) * Math.Cos(headingRad);
         double lonBwd = planeLon - (halfKm / 111.0) * Math.Sin(headingRad) / cosLat;
 
+        // Gap edge points — 500 m either side of the plane so the line doesn't overlap the pin
+        double gapKm     = 0.5;
+        double latGapFwd = planeLat + (gapKm / 111.0) * Math.Cos(headingRad);
+        double lonGapFwd = planeLon + (gapKm / 111.0) * Math.Sin(headingRad) / cosLat;
+        double latGapBwd = planeLat - (gapKm / 111.0) * Math.Cos(headingRad);
+        double lonGapBwd = planeLon - (gapKm / 111.0) * Math.Sin(headingRad) / cosLat;
+
         // Arrowhead triangle centred on the plane's current position — size scales with
         // halfKm so it looks consistent across all zoom levels.
         // Tip is halfDepthKm ahead of the plane; base is halfDepthKm behind — the midpoint
@@ -186,7 +193,7 @@ public sealed class MapboxSnapshotService : IMapSnapshotService
             ["type"] = "FeatureCollection",
             ["features"] = new JsonArray
             {
-                // Orange trajectory line: behind → plane → ahead
+                // Orange trajectory: two segments with a 1 km gap around the plane pin
                 new JsonObject
                 {
                     ["type"] = "Feature",
@@ -198,12 +205,13 @@ public sealed class MapboxSnapshotService : IMapSnapshotService
                     },
                     ["geometry"] = new JsonObject
                     {
-                        ["type"] = "LineString",
+                        ["type"] = "MultiLineString",
                         ["coordinates"] = new JsonArray
                         {
-                            Coord(lonBwd,   latBwd),
-                            Coord(planeLon, planeLat),
-                            Coord(lonFwd,   latFwd)
+                            // behind: backward tip → 500 m before the plane
+                            new JsonArray { Coord(lonBwd, latBwd), Coord(lonGapBwd, latGapBwd) },
+                            // ahead: 500 m after the plane → forward tip
+                            new JsonArray { Coord(lonGapFwd, latGapFwd), Coord(lonFwd, latFwd) }
                         }
                     }
                 },
