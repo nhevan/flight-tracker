@@ -201,12 +201,15 @@ while (!cts.Token.IsCancellationRequested)
         // Remove flights that left range so they can re-trigger if they return
         notifiedIcaos.RemoveWhere(icao => !previousPositions.ContainsKey(icao));
 
-        FlightTableRenderer.Render(
-            enriched,
-            settings.HomeLocation.Latitude,
-            settings.HomeLocation.Longitude,
-            settings.HomeLocation.VisualRangeKm,
-            DateTimeOffset.Now);
+        // Skip the interactive table when stdout is redirected (e.g. systemd journal)
+        // — box-drawing characters produce garbled multi-line journal entries.
+        if (!Console.IsOutputRedirected)
+            FlightTableRenderer.Render(
+                enriched,
+                settings.HomeLocation.Latitude,
+                settings.HomeLocation.Longitude,
+                settings.HomeLocation.VisualRangeKm,
+                DateTimeOffset.Now);
     }
     catch (OperationCanceledException) when (cts.Token.IsCancellationRequested)
     {
