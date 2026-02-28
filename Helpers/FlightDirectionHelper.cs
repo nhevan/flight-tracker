@@ -72,10 +72,19 @@ public static class FlightDirectionHelper
 
         // Scalar projection of (home − flight) onto heading vector
         // = distance along the current track to the closest approach point
-        double t = (-dx) * hx + (-dy) * hy;
+        double t = (-dx) * hx + (-dy) * hy; 
+        if (t <= 0) return null; // closest approach already behind 
 
-        // t > 0 means the closest approach is ahead; t ≤ 0 means it's already passed
-        return t > 0 ? t / speedMs.Value : null;
+        // How close will the plane actually get to home at its closest approach point? 
+        double cpx = dx + hx * t; 
+        double cpy = dy + hy * t; 
+        double missDistKm = Math.Sqrt(cpx * cpx + cpy * cpy) / 1000.0; 
+
+        // Only report ETA if closest approach is within 5 km of home 
+        // (consistent with the Classify() "Overhead" threshold) 
+        if (missDistKm > 5.0) return null; 
+
+        return t / speedMs.Value;
     }
 
     /// <summary>
