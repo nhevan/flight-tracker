@@ -220,7 +220,10 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
             sb.AppendLine($"<b>{EscapeHtml(name)}</b>");
         sb.AppendLine($"Lat: {lat.ToString("F6", ic)} · Lon: {lon.ToString("F6", ic)}");
         sb.AppendLine();
-        sb.Append("Notification state reset — flights near this spot will notify fresh.");
+        sb.AppendLine("Notification state reset — flights near this spot will notify fresh.");
+        sb.AppendLine();
+        sb.Append("⏳ A notification fires when a flight is ≤ 2 min from directly overhead and ≤ 3 000 m altitude.\n" +
+                  "Use /stats to see sightings once they start being logged.");
 
         await SendMessageAsync(chatId, sb.ToString(), cancellationToken);
         Console.WriteLine($"[TelegramListener] /spot command: location set to ({lat:F6}, {lon:F6})" +
@@ -321,6 +324,14 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
         sb.AppendLine("📊 <b>Flight Tracker Stats</b>");
         if (locationName is not null)
             sb.AppendLine($"📍 {EscapeHtml(locationName)}");
+
+        if (s.TotalSightings == 0)
+        {
+            sb.AppendLine();
+            sb.Append("🆕 No flights have been tracked at this location yet.\n" +
+                      "Stats will appear here as flights are logged overhead.");
+            return sb.ToString();
+        }
         sb.AppendLine();
 
         sb.AppendLine($"✈️ Total planes tracked: <b>{s.TotalSightings:N0}</b>");
