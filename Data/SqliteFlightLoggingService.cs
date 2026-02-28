@@ -60,6 +60,7 @@ public sealed class SqliteFlightLoggingService : IFlightLoggingService
                 RouteDistanceKm     REAL,
                 HomeLat             REAL,
                 HomeLon             REAL,
+                HomeName            TEXT,
                 Squawk              TEXT,
                 Emergency           TEXT,
                 IsMilitary          INTEGER,
@@ -90,6 +91,7 @@ public sealed class SqliteFlightLoggingService : IFlightLoggingService
             ("AircraftDesc",      "TEXT"),
             ("HomeLat",           "REAL"),
             ("HomeLon",           "REAL"),
+            ("HomeName",          "TEXT"),
         };
         foreach (var (name, type) in newColumns)
         {
@@ -114,6 +116,15 @@ public sealed class SqliteFlightLoggingService : IFlightLoggingService
         backfill.Parameters.AddWithValue("$homeLon", _homeLon);
         await backfill.ExecuteNonQueryAsync(cancellationToken);
 
+        // One-time backfill: name existing sightings that have coordinates but no name.
+        using var nameFill = conn.CreateCommand();
+        nameFill.CommandText = """
+            UPDATE FlightSightings
+            SET HomeName = 'Ijssellaan'
+            WHERE HomeName IS NULL AND HomeLat IS NOT NULL
+            """;
+        await nameFill.ExecuteNonQueryAsync(cancellationToken);
+
         Console.WriteLine($"[FlightLog] Database ready: {_dbPath}");
     }
 
@@ -126,6 +137,7 @@ public sealed class SqliteFlightLoggingService : IFlightLoggingService
         double? etaSeconds,
         double homeLat,
         double homeLon,
+        string? homeName,
         DateTimeOffset timestamp,
         CancellationToken cancellationToken = default)
     {
@@ -144,7 +156,7 @@ public sealed class SqliteFlightLoggingService : IFlightLoggingService
                     Direction, EtaSeconds,
                     TypeCode, Registration, Operator, Category,
                     OriginIata, DestIata, RouteDistanceKm,
-                    HomeLat, HomeLon,
+                    HomeLat, HomeLon, HomeName,
                     Squawk, Emergency, IsMilitary,
                     AltGeomMeters, NavAltitudeMeters,
                     WindDirectionDeg, WindSpeedKnots, OutsideAirTempC,
@@ -156,7 +168,7 @@ public sealed class SqliteFlightLoggingService : IFlightLoggingService
                     $direction, $etaSeconds,
                     $typeCode, $registration, $operator, $category,
                     $originIata, $destIata, $routeDistanceKm,
-                    $homeLat, $homeLon,
+                    $homeLat, $homeLon, $homeName,
                     $squawk, $emergency, $isMilitary,
                     $altGeomMeters, $navAltitudeMeters,
                     $windDirectionDeg, $windSpeedKnots, $outsideAirTempC,
@@ -188,6 +200,7 @@ public sealed class SqliteFlightLoggingService : IFlightLoggingService
             cmd.Parameters.AddWithValue("$routeDistanceKm",  flight.Route?.RouteDistanceKm as object ?? DBNull.Value);
             cmd.Parameters.AddWithValue("$homeLat",           homeLat);
             cmd.Parameters.AddWithValue("$homeLon",           homeLon);
+            cmd.Parameters.AddWithValue("$homeName",          homeName as object ?? DBNull.Value);
             cmd.Parameters.AddWithValue("$squawk",           f.Squawk as object ?? DBNull.Value);
             cmd.Parameters.AddWithValue("$emergency",        f.Emergency as object ?? DBNull.Value);
             cmd.Parameters.AddWithValue("$isMilitary",       f.IsMilitary ? 1 : DBNull.Value);
@@ -209,19 +222,29 @@ public sealed class SqliteFlightLoggingService : IFlightLoggingService
     // ── Stats ─────────────────────────────────────────────────────────────────
 
     /// <inheritdoc/>
-    public async Task<FlightStats> GetStatsAsync(CancellationToken cancellationToken = default)
+    public async Task<FlightStats> GetStatsAsync(
+        double homeLat, double homeLon,
+        CancellationToken cancellationToken = default)
     {
         using var conn = new SqliteConnection(_connectionString);
         await conn.OpenAsync(cancellationToken);
 
-        int total              = await QueryScalarIntAsync(conn, "SELECT COUNT(*) FROM FlightSightings", cancellationToken);
-        int todayCount         = await QueryScalarIntAsync(conn, "SELECT COUNT(*) FROM FlightSightings WHERE date(SeenAt,'localtime') = date('now','localtime')", cancellationToken);
-        int todayUnique        = await QueryScalarIntAsync(conn, "SELECT COUNT(DISTINCT Icao24) FROM FlightSightings WHERE date(SeenAt,'localtime') = date('now','localtime')", cancellationToken);
-        var busiestHour        = await GetBusiestHourAsync(conn, cancellationToken);
-        var mostAirline        = await GetMostSpottedAirlineAsync(conn, cancellationToken);
-        var rarestType         = await GetRarestTypeAsync(conn, cancellationToken);
-        var longestGap         = await GetLongestGapAsync(conn, cancellationToken);
-        int currentStreak      = await GetCurrentStreakAsync(conn, cancellationToken);
+        var locParms = new Dictionary<string, object> { ["$homeLat"] = homeLat, ["$homeLon"] = homeLon };
+
+        int total         = await QueryScalarIntAsync(conn,
+            "SELECT COUNT(*) FROM FlightSightings WHERE HomeLat = $homeLat AND HomeLon = $homeLon",
+            cancellationToken, locParms);
+        int todayCount    = await QueryScalarIntAsync(conn,
+            "SELECT COUNT(*) FROM FlightSightings WHERE date(SeenAt,'localtime') = date('now','localtime') AND HomeLat = $homeLat AND HomeLon = $homeLon",
+            cancellationToken, locParms);
+        int todayUnique   = await QueryScalarIntAsync(conn,
+            "SELECT COUNT(DISTINCT Icao24) FROM FlightSightings WHERE date(SeenAt,'localtime') = date('now','localtime') AND HomeLat = $homeLat AND HomeLon = $homeLon",
+            cancellationToken, locParms);
+        var busiestHour   = await GetBusiestHourAsync(conn, homeLat, homeLon, cancellationToken);
+        var mostAirline   = await GetMostSpottedAirlineAsync(conn, homeLat, homeLon, cancellationToken);
+        var rarestType    = await GetRarestTypeAsync(conn, homeLat, homeLon, cancellationToken);
+        var longestGap    = await GetLongestGapAsync(conn, homeLat, homeLon, cancellationToken);
+        int currentStreak = await GetCurrentStreakAsync(conn, homeLat, homeLon, cancellationToken);
 
         return new FlightStats(
             TotalSightings:          total,
@@ -242,16 +265,20 @@ public sealed class SqliteFlightLoggingService : IFlightLoggingService
     // ── Private query helpers ─────────────────────────────────────────────────
 
     private static async Task<int> QueryScalarIntAsync(
-        SqliteConnection conn, string sql, CancellationToken ct)
+        SqliteConnection conn, string sql, CancellationToken ct,
+        Dictionary<string, object>? parms = null)
     {
         using var cmd = conn.CreateCommand();
         cmd.CommandText = sql;
+        if (parms is not null)
+            foreach (var (k, v) in parms)
+                cmd.Parameters.AddWithValue(k, v);
         var result = await cmd.ExecuteScalarAsync(ct);
         return result is long l ? (int)l : 0;
     }
 
     private static async Task<(int Hour, double AvgPerDay)?> GetBusiestHourAsync(
-        SqliteConnection conn, CancellationToken ct)
+        SqliteConnection conn, double homeLat, double homeLon, CancellationToken ct)
     {
         using var cmd = conn.CreateCommand();
         cmd.CommandText = """
@@ -259,10 +286,13 @@ public sealed class SqliteFlightLoggingService : IFlightLoggingService
                    COUNT(*) as total,
                    COUNT(*) * 1.0 / NULLIF(COUNT(DISTINCT date(SeenAt,'localtime')), 0) as avg_per_day
             FROM FlightSightings
+            WHERE HomeLat = $homeLat AND HomeLon = $homeLon
             GROUP BY hour
             ORDER BY total DESC
             LIMIT 1
             """;
+        cmd.Parameters.AddWithValue("$homeLat", homeLat);
+        cmd.Parameters.AddWithValue("$homeLon", homeLon);
         using var reader = await cmd.ExecuteReaderAsync(ct);
         if (await reader.ReadAsync(ct))
             return (reader.GetInt32(0), reader.GetDouble(2));
@@ -270,17 +300,20 @@ public sealed class SqliteFlightLoggingService : IFlightLoggingService
     }
 
     private static async Task<(string Name, int Count)?> GetMostSpottedAirlineAsync(
-        SqliteConnection conn, CancellationToken ct)
+        SqliteConnection conn, double homeLat, double homeLon, CancellationToken ct)
     {
         using var cmd = conn.CreateCommand();
         cmd.CommandText = """
             SELECT Operator, COUNT(*) as cnt
             FROM FlightSightings
             WHERE Operator IS NOT NULL AND Operator != ''
+              AND HomeLat = $homeLat AND HomeLon = $homeLon
             GROUP BY Operator
             ORDER BY cnt DESC
             LIMIT 1
             """;
+        cmd.Parameters.AddWithValue("$homeLat", homeLat);
+        cmd.Parameters.AddWithValue("$homeLon", homeLon);
         using var reader = await cmd.ExecuteReaderAsync(ct);
         if (await reader.ReadAsync(ct))
             return (reader.GetString(0), reader.GetInt32(1));
@@ -288,17 +321,20 @@ public sealed class SqliteFlightLoggingService : IFlightLoggingService
     }
 
     private static async Task<(string TypeCode, int Count)?> GetRarestTypeAsync(
-        SqliteConnection conn, CancellationToken ct)
+        SqliteConnection conn, double homeLat, double homeLon, CancellationToken ct)
     {
         using var cmd = conn.CreateCommand();
         cmd.CommandText = """
             SELECT TypeCode, COUNT(*) as cnt
             FROM FlightSightings
             WHERE TypeCode IS NOT NULL AND TypeCode != ''
+              AND HomeLat = $homeLat AND HomeLon = $homeLon
             GROUP BY TypeCode
             ORDER BY cnt ASC
             LIMIT 1
             """;
+        cmd.Parameters.AddWithValue("$homeLat", homeLat);
+        cmd.Parameters.AddWithValue("$homeLon", homeLon);
         using var reader = await cmd.ExecuteReaderAsync(ct);
         if (await reader.ReadAsync(ct))
             return (reader.GetString(0), reader.GetInt32(1));
@@ -306,7 +342,7 @@ public sealed class SqliteFlightLoggingService : IFlightLoggingService
     }
 
     private static async Task<(TimeSpan Duration, DateTimeOffset Start, DateTimeOffset End)?> GetLongestGapAsync(
-        SqliteConnection conn, CancellationToken ct)
+        SqliteConnection conn, double homeLat, double homeLon, CancellationToken ct)
     {
         using var cmd = conn.CreateCommand();
         cmd.CommandText = """
@@ -316,8 +352,11 @@ public sealed class SqliteFlightLoggingService : IFlightLoggingService
                 b.SeenAt as gap_end
             FROM FlightSightings a
             JOIN FlightSightings b
-              ON b.Id = (SELECT MIN(Id) FROM FlightSightings WHERE Id > a.Id)
+              ON b.Id = (SELECT MIN(Id) FROM FlightSightings WHERE Id > a.Id AND HomeLat = $homeLat AND HomeLon = $homeLon)
+            WHERE a.HomeLat = $homeLat AND a.HomeLon = $homeLon
             """;
+        cmd.Parameters.AddWithValue("$homeLat", homeLat);
+        cmd.Parameters.AddWithValue("$homeLon", homeLon);
         using var reader = await cmd.ExecuteReaderAsync(ct);
         if (await reader.ReadAsync(ct) && !reader.IsDBNull(0))
         {
@@ -339,17 +378,20 @@ public sealed class SqliteFlightLoggingService : IFlightLoggingService
     /// that each contain at least one sighting.
     /// </summary>
     private static async Task<int> GetCurrentStreakAsync(
-        SqliteConnection conn, CancellationToken ct)
+        SqliteConnection conn, double homeLat, double homeLon, CancellationToken ct)
     {
         // Fetch distinct hour-buckets in descending order
         using var cmd = conn.CreateCommand();
         cmd.CommandText = """
             SELECT strftime('%Y-%m-%d %H', SeenAt, 'localtime') as hour_bucket
             FROM FlightSightings
+            WHERE HomeLat = $homeLat AND HomeLon = $homeLon
             GROUP BY hour_bucket
             ORDER BY hour_bucket DESC
             LIMIT 200
             """;
+        cmd.Parameters.AddWithValue("$homeLat", homeLat);
+        cmd.Parameters.AddWithValue("$homeLon", homeLon);
 
         var hourBuckets = new List<DateTime>();
         using (var reader = await cmd.ExecuteReaderAsync(ct))

@@ -86,7 +86,7 @@ await loggingService.InitialiseAsync(cts.Token);
 // ── Startup notification ──────────────────────────────────────────────────────
 try
 {
-    var startupStats = await loggingService.GetStatsAsync(cts.Token);
+    var startupStats = await loggingService.GetStatsAsync(settings.HomeLocation.Latitude, settings.HomeLocation.Longitude, cts.Token);
     await telegramService.SendStatusAsync(FormatStartupMessage(startupStats), cts.Token);
 }
 catch (Exception ex)
@@ -193,7 +193,7 @@ while (!cts.Token.IsCancellationRequested)
                 // Query BEFORE logging so the count reflects prior visits only
                 var visitorInfo = await repeatVisitorService.GetVisitorInfoAsync(f.Icao24, cts.Token);
                 await telegramService.NotifyAsync(ef, dir ?? "Towards", etaSecs, visitorInfo, cts.Token);
-                await loggingService.LogAsync(ef, dir ?? "Towards", etaSecs, homeLat, homeLon, DateTimeOffset.UtcNow, cts.Token);
+                await loggingService.LogAsync(ef, dir ?? "Towards", etaSecs, homeLat, homeLon, settings.HomeLocation.Name, DateTimeOffset.UtcNow, cts.Token);
                 notifiedIcaos.Add(f.Icao24);
             }
         }

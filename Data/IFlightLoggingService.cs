@@ -20,11 +20,15 @@ public interface IFlightLoggingService
         double? etaSeconds,
         double homeLat,
         double homeLon,
+        string? homeName,
         DateTimeOffset timestamp,
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Computes aggregated stats from all recorded sightings.
+    /// Computes aggregated stats from all recorded sightings at the given location.
     /// </summary>
-    Task<FlightStats> GetStatsAsync(CancellationToken cancellationToken = default);
+    Task<FlightStats> GetStatsAsync(
+        double homeLat,
+        double homeLon,
+        CancellationToken cancellationToken = default);
 }
