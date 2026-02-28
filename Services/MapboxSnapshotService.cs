@@ -66,7 +66,13 @@ public sealed class MapboxSnapshotService : IMapSnapshotService
 
             Console.WriteLine($"[MapSnapshot] URL: {url.Replace(_settings.AccessToken, "***")}");
 
-            var response = await _httpClient.GetAsync(url, cancellationToken);
+            // Use DangerousDisablePathAndQueryCanonicalization so the .NET Uri class does not
+            // decode percent-encoded characters (e.g. %2C → ,) in the path segment that
+            // contains the URL-encoded GeoJSON.  Without this, the Uri normalisation step
+            // inside HttpClient can silently corrupt the encoded GeoJSON before it reaches
+            // the Mapbox API, causing the overlay to be silently ignored.
+            Uri.TryCreate(url, new UriCreationOptions { DangerousDisablePathAndQueryCanonicalization = true }, out Uri? safeUri);
+            var response = await _httpClient.GetAsync(safeUri ?? new Uri(url), cancellationToken);
             if (!response.IsSuccessStatusCode)
             {
                 string body = await response.Content.ReadAsStringAsync(cancellationToken);
