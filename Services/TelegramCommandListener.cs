@@ -102,6 +102,19 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
                     {
                         await HandleTestCommandAsync(update.Message!.Chat.Id, cancellationToken);
                     }
+                    else
+                    {
+                        await SendMessageAsync(update.Message!.Chat.Id,
+                            "🤷 I didn't recognise that command.\n\n" +
+                            "<b>Available commands:</b>\n" +
+                            "/stats — flight statistics for the current spot\n" +
+                            "/spot &lt;lat&gt; &lt;lon&gt; [name] — set spot by coordinates\n" +
+                            "/spot &lt;name&gt; — switch to a previously named spot\n" +
+                            "/spots — list all known spot names\n" +
+                            "/range &lt;km&gt; — set visual range filter (0 = off)\n" +
+                            "/test — send a test notification",
+                            cancellationToken);
+                    }
                 }
             }
             catch (OperationCanceledException)
