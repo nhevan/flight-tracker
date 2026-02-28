@@ -153,7 +153,8 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
         {
             FlightStats stats = await _loggingService.GetStatsAsync(
                 _homeLocation.Latitude, _homeLocation.Longitude, cancellationToken);
-            string message    = FormatStatsMessage(stats, _homeLocation.Name);
+            string message    = FormatStatsMessage(stats, _homeLocation.Name,
+                                                   _homeLocation.Latitude, _homeLocation.Longitude);
 
             string apiUrl = $"https://api.telegram.org/bot{_settings.BotToken}/sendMessage";
             var payload   = new
@@ -318,12 +319,15 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
     private static string EscapeHtml(string s) =>
         s.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;");
 
-    private static string FormatStatsMessage(FlightStats s, string? locationName)
+    private static string FormatStatsMessage(FlightStats s, string? locationName,
+                                              double homeLat, double homeLon)
     {
+        var ic = CultureInfo.InvariantCulture;
         var sb = new System.Text.StringBuilder();
         sb.AppendLine("📊 <b>Flight Tracker Stats</b>");
         if (locationName is not null)
             sb.AppendLine($"📍 {EscapeHtml(locationName)}");
+        sb.AppendLine($"🌐 <code>{homeLat.ToString("F6", ic)}, {homeLon.ToString("F6", ic)}</code>");
 
         if (s.TotalSightings == 0)
         {
