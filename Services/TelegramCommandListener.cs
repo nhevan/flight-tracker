@@ -158,7 +158,9 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
             FlightStats stats = await _loggingService.GetStatsAsync(
                 _homeLocation.Latitude, _homeLocation.Longitude, cancellationToken);
             string message    = FormatStatsMessage(stats, _homeLocation.Name,
-                                                   _homeLocation.Latitude, _homeLocation.Longitude);
+                                                   _homeLocation.Latitude, _homeLocation.Longitude,
+                                                   _homeLocation.VisualRangeKm,
+                                                   _settings.MaxAltitudeMeters);
 
             string apiUrl = $"https://api.telegram.org/bot{_settings.BotToken}/sendMessage";
             var payload   = new
@@ -428,7 +430,8 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
         s.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;");
 
     private static string FormatStatsMessage(FlightStats s, string? locationName,
-                                              double homeLat, double homeLon)
+                                              double homeLat, double homeLon,
+                                              double visualRangeKm, double maxAltitudeMeters)
     {
         var ic = CultureInfo.InvariantCulture;
         var sb = new System.Text.StringBuilder();
@@ -436,6 +439,8 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
         if (locationName is not null)
             sb.AppendLine($"📍 {EscapeHtml(locationName)}");
         sb.AppendLine($"🌐 <code>{homeLat.ToString("F6", ic)}, {homeLon.ToString("F6", ic)}</code>");
+        string rangeStr = visualRangeKm > 0 ? $"{visualRangeKm:F0} km" : "unlimited";
+        sb.AppendLine($"⚙️ Range: <b>{rangeStr}</b> · Max alt: <b>{maxAltitudeMeters:F0} m</b>");
 
         if (s.TotalSightings == 0)
         {
