@@ -134,34 +134,20 @@ public sealed class MapboxSnapshotService : IMapSnapshotService
     {
         var ic = System.Globalization.CultureInfo.InvariantCulture;
 
+        // Red airport pin — plane's current position
+        string planeMarker = $"pin-s-airport+ff0000({planeLon.ToString("F6", ic)},{planeLat.ToString("F6", ic)})";
+
         // Blue home pin — shown at the map centre so the user can see their reference point
         string homeMarker = $"pin-s-home+4499ff({homeLon.ToString("F6", ic)},{homeLat.ToString("F6", ic)})";
 
         // Defensive guard — GetSnapshotAsync already returns null when heading is null,
         // but kept here in case BuildOverlays is ever called directly.
         if (headingDegrees is null)
-        {
-            string fallbackMarker = $"pin-s-airport+ff0000({planeLon.ToString("F6", ic)},{planeLat.ToString("F6", ic)})";
-            return $"{fallbackMarker},{homeMarker}";
-        }
+            return $"{planeMarker},{homeMarker}";
 
         // Project halfKm forward and backward along the plane's heading
         double headingRad = headingDegrees.Value * Math.PI / 180.0;
         double cosLat     = Math.Cos(planeLat * Math.PI / 180.0);
-
-        // Place the red pin at the closest approach point on the trajectory line to home.
-        // This keeps the marker visible on the home-centred map even when the plane itself
-        // is far outside the map bounds.
-        // Project the home vector onto the heading unit vector (equirectangular, km).
-        double dxToHome = (homeLon - planeLon) * cosLat * 111.0;
-        double dyToHome = (homeLat - planeLat) * 111.0;
-        double projKm   = dxToHome * Math.Sin(headingRad) + dyToHome * Math.Cos(headingRad);
-
-        double markerLat = planeLat + (projKm / 111.0) * Math.Cos(headingRad);
-        double markerLon = planeLon + (projKm / 111.0) * Math.Sin(headingRad) / cosLat;
-
-        // Red airport pin — closest approach point on the trajectory line to home
-        string planeMarker = $"pin-s-airport+ff0000({markerLon.ToString("F6", ic)},{markerLat.ToString("F6", ic)})";
 
         double latFwd = planeLat + (halfKm / 111.0) * Math.Cos(headingRad);
         double lonFwd = planeLon + (halfKm / 111.0) * Math.Sin(headingRad) / cosLat;
