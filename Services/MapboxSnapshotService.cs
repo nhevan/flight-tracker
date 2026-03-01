@@ -61,7 +61,7 @@ public sealed class MapboxSnapshotService : IMapSnapshotService
                          $"/{overlays}" +
                          $"/{_home.Longitude.ToString("F6", System.Globalization.CultureInfo.InvariantCulture)}," +
                          $"{_home.Latitude.ToString("F6", System.Globalization.CultureInfo.InvariantCulture)}," +
-                         $"{zoom},-10" +
+                         $"{zoom},350" +
                          $"/{ImageWidth}x{ImageHeight}@2x" +
                          $"?access_token={Uri.EscapeDataString(_settings.AccessToken)}";
 
@@ -104,9 +104,9 @@ public sealed class MapboxSnapshotService : IMapSnapshotService
     /// </summary>
     private static int DistanceToZoom(double distKm) => distKm switch
     {
-        > 13 => 9,   // > 13 km  — wide regional view  (~113 km across)
-        > 3  => 11,  // 3–13 km  — city-level           (~28 km across)
-        _    => 13   // < 3 km   — neighbourhood         (~7 km across)
+        > 13 => 10,  // > 13 km  — wide regional view
+        > 3  => 12,  // 3–13 km  — city-level
+        _    => 14   // < 3 km   — neighbourhood
     };
 
     /// <summary>
