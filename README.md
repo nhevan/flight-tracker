@@ -13,11 +13,16 @@ a low-altitude aircraft is approaching overhead.
 - **Telegram notifications** when a flight is ≤ 2 minutes from overhead and below your altitude threshold:
   - 🔁 Repeat visitor detection — "Welcome back! PH-BHO was last seen 3 days ago"
   - 🚨 Emergency and 🪖 military flagging
+  - ↩️ Course-change re-notification when a tracked flight changes bearing significantly
   - Full route: `Barcelona (BCN) → Amsterdam (AMS) · arriving in ~2h 15m`
   - Aircraft photo (from planespotters.net) and live Mapbox map with heading trajectory
-  - AI-generated facts in the plane's own voice (via Anthropic Claude)
+  - AI-generated facts in the plane's own voice (via Anthropic Claude) — omitted on course-change re-notifications
   - Wind speed/direction and outside air temperature when broadcast by the aircraft
-- **Flight statistics** via `/stats` Telegram command — total sightings, busiest hours, streaks, gaps
+  - Tappable callsign link that opens FlightRadar24 centred on your spot (zoom 11)
+- **Telegram bot commands** — manage spots, adjust range, query stats, and send test notifications
+- **Smart fallback replies** — unknown messages are forwarded to Claude for a helpful plain-text response
+- **Flight statistics** via `/stats` — total sightings, busiest hours, streaks, gaps
+- **Named spot management** — save and switch between multiple named spotting locations
 - **Persistent SQLite history** — every notified flight is logged with full telemetry
 - **EC2 deployment** — systemd service with auto-restart and helper deploy scripts
 - **Graceful shutdown** — handles Ctrl+C and SIGTERM cleanly
@@ -26,7 +31,7 @@ a low-altitude aircraft is approaching overhead.
 
 - [.NET 9 SDK](https://dotnet.microsoft.com/download/dotnet/9.0)
 - (Optional) A Telegram bot token and chat ID for notifications
-- (Optional) An [Anthropic API key](https://console.anthropic.com) for AI-generated aircraft facts
+- (Optional) An [Anthropic API key](https://console.anthropic.com) for AI-generated aircraft facts and smart bot replies
 - (Optional) A [Mapbox access token](https://account.mapbox.com) for live map images
 
 No flight-data API credentials are required. Flight data comes from
@@ -56,6 +61,7 @@ All settings live in `appsettings.json` (gitignored — never committed).
   "HomeLocation": {
     "Latitude": 51.9836,
     "Longitude": 4.6311,
+    "Name": "Home",
     "BoundingBoxDegrees": 1.0,
     "VisualRangeKm": 50
   },
@@ -92,6 +98,7 @@ All settings live in `appsettings.json` (gitignored — never committed).
 |-------|---------|-------------|
 | `Latitude` | — | Home latitude (WGS-84) |
 | `Longitude` | — | Home longitude (WGS-84) |
+| `Name` | — | Optional human-readable name for this spot (e.g. `"Home"`, `"Roof terrace"`) |
 | `BoundingBoxDegrees` | `1.0` | Query radius (±degrees from centre) |
 | `VisualRangeKm` | `50.0` | Filter flights beyond this distance. Set to `0` to show all in the bounding box |
 
@@ -125,19 +132,19 @@ key required. The app queries the `point/{lat}/{lon}/{radius}` endpoint on every
 2. Open `https://api.telegram.org/bot{YOUR_TOKEN}/getUpdates`
 3. Copy `result[0].message.chat.id`
 
-### Anthropic (AI Facts)
+### Anthropic (AI Facts + Smart Replies)
 
 | Field | Default | Description |
 |-------|---------|-------------|
-| `Enabled` | `false` | Set to `true` to append AI-generated facts to Telegram messages |
+| `Enabled` | `false` | Set to `true` to enable both AI aircraft facts and smart bot replies |
 | `ApiKey` | — | Anthropic API key (get from [console.anthropic.com](https://console.anthropic.com)) |
 | `Model` | `claude-haiku-4-5` | Model to use — Haiku is fast and cheap for short lookups |
 | `MaxTokens` | `200` | Maximum tokens in the AI response |
 
-When enabled, each notification ends with 2–3 sentences written from the aircraft's own
-perspective — e.g. *"I'm a Boeing 787-9, registration PH-BHO, and I entered service in
-2014…"*. Facts are cached per aircraft registration for the lifetime of the session so API
-calls are minimal; aircraft without a known registration share one cached fact per type.
+When enabled:
+- Each notification ends with 2–3 sentences written from the aircraft's own perspective. Facts are cached per aircraft registration for the session lifetime so API calls are minimal.
+- Any unrecognised bot message is forwarded to Claude, which replies helpfully in plain text (e.g. answering aviation questions or guiding you to valid commands).
+- AI facts are **not** appended to course-change re-notifications.
 
 ### Mapbox (Live Map)
 
@@ -160,6 +167,31 @@ line). Zoom level adjusts automatically:
 The map is fetched server-side so the Mapbox token is never sent to Telegram. If the map
 is unavailable the notification falls back to the aircraft photo or plain text.
 
+## Telegram Bot Commands
+
+Register these with [@BotFather](https://t.me/BotFather) via `/setcommands`:
+
+```
+stats - Show aggregated flight statistics for the current spot
+spot - Set spot by coords (/spot <lat> <lon> [name]) or switch by name (/spot <name>)
+spots - List all known spot names
+range - Set the visual range filter in km (/range <km> or /range 0 to disable)
+test - Send a synthetic test flight notification
+```
+
+### Command reference
+
+| Command | Description |
+|---------|-------------|
+| `/stats` | Aggregated flight statistics for the current spot |
+| `/spot <lat> <lon> [name]` | Set the active spotting location by coordinates. The optional name is saved and shown in notifications |
+| `/spot <name>` | Switch to a previously named spot by looking up its most recent coordinates from the flight history database |
+| `/spots` | List all named spots recorded in the flight history database, plus the current active spot if named |
+| `/range <km>` | Update `VisualRangeKm` at runtime (e.g. `/range 30`). Use `/range 0` to disable filtering |
+| `/test` | Send a synthetic notification through the full pipeline to verify everything is wired up correctly |
+
+Any other text is forwarded to Claude (when Anthropic is enabled), which replies helpfully in plain text.
+
 ## Telegram Notifications
 
 Notifications fire when a flight is ≤ 2 minutes from its closest point to your home
@@ -181,12 +213,15 @@ Wind: 270° 45 kts | OAT: -52°C
 | Section | Description |
 |---------|-------------|
 | Repeat banner | 🔁 if seen before (with visit count + last destination), 👋 for first sighting |
-| Header | Callsign, direction, ETA to overhead. 🚨 for emergencies (squawk 7700/7600/7500 or declared emergency), 🪖 for military |
+| Header | Callsign (tappable — opens FlightRadar24 at your spot), direction, ETA to overhead. 🚨 for emergencies (squawk 7700/7600/7500 or declared emergency), 🪖 for military |
 | Route | Full airport names with IATA codes and live ETA to destination |
 | Aircraft | Description · type code / registration · operator |
 | Stats | Altitude (+ autopilot target `→ FLxxx` when set), speed, distance from home, ETA |
 | Wind / temp | Wind direction + speed and outside air temperature (when broadcast by aircraft) |
-| AI facts | 2–3 sentences from the aircraft's perspective (requires Anthropic enabled) |
+| AI facts | 2–3 sentences from the aircraft's perspective (requires Anthropic; omitted on course-change re-notifications) |
+
+The callsign in the header is a deep link (`http://fr24.com/<lat>,<lon>/11`) that opens
+FlightRadar24 centred on your spotting location at zoom level 11.
 
 When both a Mapbox map and a planespotters photo are available they are sent as a
 two-photo album (map with the full caption, photo captionless).
@@ -218,8 +253,8 @@ the area.
 ## Flight Stats
 
 Every Telegram notification is logged to a local SQLite database (`data/flight_stats.db`
-by default, configurable via `DatabasePath`). Send **`stats`** or **`/stats`** to the
-Telegram bot at any time for a summary:
+by default, configurable via `DatabasePath`). Send **`/stats`** to the bot at any time
+for a summary:
 
 ```
 📊 Flight Tracker Stats
@@ -233,16 +268,6 @@ Telegram bot at any time for a summary:
 🔥 Current streak: 6 consecutive hours with planes
 ```
 
-| Stat | Description |
-|------|-------------|
-| Total | All-time sighting count |
-| Today | Sightings since midnight (local time) |
-| Busiest hour | Hour of day (0–23) historically with the most planes |
-| Most spotted airline | Operator logged the most times |
-| Rarest aircraft type | ICAO type code seen the fewest times |
-| Longest gap | Biggest gap between any two consecutive sightings |
-| Current streak | Consecutive hours (going back from now) with at least one sighting |
-
 The database accumulates indefinitely and is never deleted automatically. Inspect it with
 [DB Browser for SQLite](https://sqlitebrowser.org) or any SQLite client.
 
@@ -254,7 +279,7 @@ The database accumulates indefinitely and is never deleted automatically. Inspec
 | [adsbdb.com](https://www.adsbdb.com) | Flight route (origin/destination airport) | None |
 | [hexdb.io](https://hexdb.io) | Aircraft type code, registration, operator | None |
 | [planespotters.net](https://www.planespotters.net) | Aircraft photos | None |
-| [Anthropic API](https://www.anthropic.com) | AI-generated aircraft facts (optional) | API key |
+| [Anthropic API](https://www.anthropic.com) | AI aircraft facts + smart bot replies (optional) | API key |
 | [Mapbox](https://www.mapbox.com) | Static map images (optional) | Access token |
 
 ## Deploying to EC2
@@ -329,32 +354,35 @@ sudo systemctl restart flighttracker
 
 ```
 flightTracker/
-├── Program.cs                           # Entry point, polling loop, DI setup
-├── Configuration/AppSettings.cs         # Configuration schema
-├── Models/                              # Data models
-│   ├── FlightState.cs                   # Raw ADS-B state + Haversine helper
-│   ├── EnrichedFlightState.cs           # Flight + route + aircraft + photo + facts
-│   ├── AircraftInfo.cs                  # Type code, registration, operator
-│   ├── FlightRoute.cs                   # Origin/destination airports + coordinates
-│   ├── RepeatVisitorInfo.cs             # Prior sighting count + last-seen details
-│   └── FlightStats.cs                   # Aggregated stats for /stats command
+├── Program.cs                             # Entry point, polling loop, DI setup
+├── Configuration/AppSettings.cs           # Configuration schema
+├── Models/                                # Data models
+│   ├── FlightState.cs                     # Raw ADS-B state + Haversine helper
+│   ├── EnrichedFlightState.cs             # Flight + route + aircraft + photo + facts
+│   ├── AircraftInfo.cs                    # Type code, registration, operator
+│   ├── FlightRoute.cs                     # Origin/destination airports + coordinates
+│   ├── RepeatVisitorInfo.cs               # Prior sighting count + last-seen details
+│   └── FlightStats.cs                     # Aggregated stats for /stats command
 ├── Services/
-│   ├── AirplanesLiveService.cs          # ADS-B flight data (airplanes.live)
-│   ├── FlightEnrichmentService.cs       # Combines route, aircraft, photo, AI facts
-│   ├── FlightRouteService.cs            # Origin/destination lookup (adsbdb.com)
-│   ├── HexDbService.cs                  # Aircraft metadata (hexdb.io)
-│   ├── PlaneSpottersPhotoService.cs     # Aircraft photos (planespotters.net)
-│   ├── AnthropicAircraftFactsService.cs # AI facts in first-person voice (Claude)
-│   ├── MapboxSnapshotService.cs         # Live map images (Mapbox Static API)
-│   ├── RepeatVisitorService.cs          # Recurring aircraft detection (SQLite query)
-│   ├── TelegramNotificationService.cs   # Builds and sends Telegram alerts
-│   └── TelegramCommandListener.cs       # /stats command via long-polling
-├── Data/SqliteFlightLoggingService.cs   # SQLite logging & stats queries
-├── Helpers/FlightDirectionHelper.cs     # Geospatial math (direction, ETA, Haversine)
-├── Display/FlightTableRenderer.cs       # Terminal table (Spectre.Console)
-├── appsettings.example.json             # Config template (copy to appsettings.json)
-├── ec2-setup.sh                         # One-time EC2 setup (run on EC2)
-├── redeploy.sh                          # Pull + restart while SSHed into EC2
-├── deploy.sh                            # Push updates from local machine
-└── flighttracker.service                # systemd unit file
+│   ├── AirplanesLiveService.cs            # ADS-B flight data (airplanes.live)
+│   ├── FlightEnrichmentService.cs         # Combines route, aircraft, photo, AI facts
+│   ├── FlightRouteService.cs              # Origin/destination lookup (adsbdb.com)
+│   ├── HexDbService.cs                    # Aircraft metadata (hexdb.io)
+│   ├── PlaneSpottersPhotoService.cs       # Aircraft photos (planespotters.net)
+│   ├── AnthropicAircraftFactsService.cs   # AI facts in first-person voice (Claude)
+│   ├── AnthropicChatService.cs            # Claude replies for unknown bot messages
+│   ├── MapboxSnapshotService.cs           # Live map images (Mapbox Static API)
+│   ├── RepeatVisitorService.cs            # Recurring aircraft detection (SQLite)
+│   ├── TelegramNotificationService.cs     # Builds and sends Telegram flight alerts
+│   └── TelegramCommandListener.cs         # Bot command handler (long-polling)
+├── Data/
+│   ├── IFlightLoggingService.cs           # Logging + stats + spot query interface
+│   └── SqliteFlightLoggingService.cs      # SQLite implementation
+├── Helpers/FlightDirectionHelper.cs       # Geospatial math (direction, ETA, Haversine)
+├── Display/FlightTableRenderer.cs         # Terminal table (Spectre.Console)
+├── appsettings.example.json               # Config template (copy to appsettings.json)
+├── ec2-setup.sh                           # One-time EC2 setup (run on EC2)
+├── redeploy.sh                            # Pull + restart while SSHed into EC2
+├── deploy.sh                              # Push updates from local machine
+└── flighttracker.service                  # systemd unit file
 ```
