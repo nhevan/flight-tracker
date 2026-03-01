@@ -411,7 +411,8 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
             double etaSeconds = distKm * 1000.0 / state.VelocityMetersPerSecond!.Value;
 
             await _notificationService.NotifyAsync(
-                flight, "Towards", etaSeconds, visitorInfo: null, cancellationToken);
+                flight, "Towards", etaSeconds, visitorInfo: null, cancellationToken,
+                _homeLocation.Latitude, _homeLocation.Longitude);
 
             await SendMessageAsync(chatId, "✅ Test notification sent!", cancellationToken);
             Console.WriteLine("[TelegramListener] /test command: synthetic notification sent.");

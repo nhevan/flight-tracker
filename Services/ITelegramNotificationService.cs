@@ -11,6 +11,7 @@ public interface ITelegramNotificationService
     /// </summary>
     Task NotifyAsync(EnrichedFlightState flight, string direction, double? etaSeconds,
                      RepeatVisitorInfo? visitorInfo, CancellationToken cancellationToken,
+                     double homeLat, double homeLon,
                      double? previousHeading = null);
 
     /// <summary>

@@ -35,6 +35,8 @@ public sealed class TelegramNotificationService : ITelegramNotificationService
         double? etaSeconds,
         RepeatVisitorInfo? visitorInfo,
         CancellationToken cancellationToken,
+        double homeLat,
+        double homeLon,
         double? previousHeading = null)
     {
         if (!_settings.Enabled
@@ -45,7 +47,7 @@ public sealed class TelegramNotificationService : ITelegramNotificationService
         try
         {
             var f    = flight.State;
-            string text = BuildMessage(flight, direction, etaSeconds, visitorInfo, previousHeading);
+            string text = BuildMessage(flight, direction, etaSeconds, visitorInfo, homeLat, homeLon, previousHeading);
 
             // 1️⃣ Try to get a live map snapshot (fetched server-side to keep token private)
             byte[]? mapBytes = await _mapService.GetSnapshotAsync(
@@ -136,6 +138,8 @@ public sealed class TelegramNotificationService : ITelegramNotificationService
         string direction,
         double? etaSeconds,
         RepeatVisitorInfo? visitorInfo,
+        double homeLat,
+        double homeLon,
         double? previousHeading = null)
     {
         var f = ef.State;
@@ -144,8 +148,8 @@ public sealed class TelegramNotificationService : ITelegramNotificationService
             ? f.Icao24
             : f.Callsign.Trim();
 
-        // fr24.com short link — iOS hands this directly to the FR24 app
-        string fr24Url      = $"http://fr24.com/{Uri.EscapeDataString(callsign)}";
+        // FR24 deep link — opens the app centred on the home spot at zoom 11
+        string fr24Url      = $"http://fr24.com/{homeLat:F4},{homeLon:F4}/11";
         string callsignLink = $"<a href=\"{fr24Url}\">{EscapeHtml(callsign)}</a>";
 
         var sb = new System.Text.StringBuilder();
@@ -299,8 +303,8 @@ public sealed class TelegramNotificationService : ITelegramNotificationService
         if (windParts.Count > 0)
             sb.AppendLine(string.Join(" | ", windParts));
 
-        // ── AI facts ─────────────────────────────────────────────────────────
-        if (!string.IsNullOrWhiteSpace(ef.AircraftFacts))
+        // ── AI facts (omitted on course-change re-notifications) ─────────────
+        if (previousHeading is null && !string.IsNullOrWhiteSpace(ef.AircraftFacts))
             sb.Append($"\n✈️ {EscapeHtml(ef.AircraftFacts)}");
 
         return sb.ToString().TrimEnd();
