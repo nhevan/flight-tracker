@@ -144,6 +144,10 @@ public sealed class TelegramNotificationService : ITelegramNotificationService
             ? f.Icao24
             : f.Callsign.Trim();
 
+        // FR24 Universal Link — tapping opens the iOS app when FR24 is installed
+        string fr24Url      = $"https://www.flightradar24.com/{Uri.EscapeDataString(callsign)}";
+        string callsignLink = $"<a href=\"{fr24Url}\">{EscapeHtml(callsign)}</a>";
+
         var sb = new System.Text.StringBuilder();
 
         // ── Course-change banner (shown when a re-notification was triggered by a bearing change)
@@ -199,8 +203,8 @@ public sealed class TelegramNotificationService : ITelegramNotificationService
 
         string etaStr = FormatEta(etaSeconds);
         string header = isEmergency
-            ? $"{headerEmoji} <b>{EscapeHtml(callsign)} — EMERGENCY</b>"
-            : $"{headerEmoji} <b>{EscapeHtml(callsign)} — {directionDisplay}</b> | {etaStr}";
+            ? $"{headerEmoji} <b>{callsignLink} — EMERGENCY</b>"
+            : $"{headerEmoji} <b>{callsignLink} — {directionDisplay}</b> | {etaStr}";
 
         sb.AppendLine(header);
 
