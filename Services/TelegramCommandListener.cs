@@ -370,7 +370,7 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
             var state = new FlightState
             {
                 Icao24                      = "aabbcc",
-                Callsign                    = "TST1234",
+                Callsign                    = "KLM1023",
                 OriginCountry               = "Netherlands",
                 Latitude                    = testLat,
                 Longitude                   = testLon,
