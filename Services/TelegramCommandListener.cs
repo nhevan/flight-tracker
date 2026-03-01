@@ -18,6 +18,7 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
     private readonly HomeLocationSettings _homeLocation;
     private readonly IFlightLoggingService _loggingService;
     private readonly ITelegramNotificationService _notificationService;
+    private readonly IAnthropicChatService _chatService;
     private readonly HttpClient _httpClient;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -29,12 +30,14 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
         AppSettings settings,
         IFlightLoggingService loggingService,
         IHttpClientFactory httpClientFactory,
-        ITelegramNotificationService notificationService)
+        ITelegramNotificationService notificationService,
+        IAnthropicChatService chatService)
     {
         _settings             = settings.Telegram;
         _homeLocation         = settings.HomeLocation;
         _loggingService       = loggingService;
         _notificationService  = notificationService;
+        _chatService          = chatService;
         _httpClient           = httpClientFactory.CreateClient("TelegramListener");
         _httpClient.Timeout   = TimeSpan.FromSeconds(40); // > long-poll timeout
     }
@@ -104,15 +107,12 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
                     }
                     else
                     {
+                        string? reply = await _chatService.ChatAsync(text, cancellationToken);
                         await SendMessageAsync(update.Message!.Chat.Id,
+                            reply ??
                             "🤷 I didn't recognise that command.\n\n" +
                             "<b>Available commands:</b>\n" +
-                            "/stats — flight statistics for the current spot\n" +
-                            "/spot &lt;lat&gt; &lt;lon&gt; [name] — set spot by coordinates\n" +
-                            "/spot &lt;name&gt; — switch to a previously named spot\n" +
-                            "/spots — list all known spot names\n" +
-                            "/range &lt;km&gt; — set visual range filter (0 = off)\n" +
-                            "/test — send a test notification",
+                            "/stats · /spot · /spots · /range · /test",
                             cancellationToken);
                     }
                 }
