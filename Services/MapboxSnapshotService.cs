@@ -28,7 +28,8 @@ public sealed class MapboxSnapshotService : IMapSnapshotService
         double? headingDegrees,
         double? inferredHeadingDegrees,
         double? altitudeMeters,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlyList<(double Lat, double Lon)>? trajectory = null)
     {
         if (!_settings.Enabled || string.IsNullOrWhiteSpace(_settings.AccessToken))
             return null;
@@ -52,7 +53,7 @@ public sealed class MapboxSnapshotService : IMapSnapshotService
             int    zoom     = DistanceToZoom(distToHomeKm);
             double halfKm   = ZoomToHalfTrajectoryKm(zoom);
             string overlays = BuildOverlays(lat.Value, lon.Value, _home.Latitude, _home.Longitude,
-                                            effectiveHeading, halfKm);
+                                            effectiveHeading, halfKm, trajectory);
             string style    = string.IsNullOrWhiteSpace(_settings.Style) ? "mapbox/dark-v11" : _settings.Style;
 
             // Map is centred on HOME so the user sees the flight path relative to their location
@@ -120,6 +121,44 @@ public sealed class MapboxSnapshotService : IMapSnapshotService
     };
 
     /// <summary>
+    /// Builds the "backward" MultiLineString segment.
+    /// When a full trajectory is available (≥ 2 points), returns a polyline through
+    /// all historical positions ending with a 500 m gap before the plane pin.
+    /// Falls back to the synthetic backward projection otherwise.
+    /// </summary>
+    private static JsonArray BuildBackSegment(
+        IReadOnlyList<(double Lat, double Lon)>? trajectory,
+        double planeLat, double planeLon,
+        double cosLat,   double gapKm,
+        double lonBwd,   double latBwd,
+        double lonGapBwd, double latGapBwd)
+    {
+        if (trajectory is { Count: >= 2 })
+        {
+            // Inbound direction: bearing from second-to-last → last known position
+            var prev = trajectory[^2];
+            var last = trajectory[^1];
+            double inboundRad = Math.Atan2(
+                (last.Lon - prev.Lon) * cosLat * 111.0,
+                (last.Lat - prev.Lat) * 111.0);
+
+            // Gap point 500 m before the plane along the inbound direction
+            double latGapInbound = planeLat - (gapKm / 111.0) * Math.Cos(inboundRad);
+            double lonGapInbound = planeLon - (gapKm / 111.0) * Math.Sin(inboundRad) / cosLat;
+
+            // Full path: all history points followed by the gap near the plane
+            var pathCoords = new JsonArray();
+            foreach (var (hLat, hLon) in trajectory)
+                pathCoords.Add(new JsonArray { hLon, hLat });
+            pathCoords.Add(new JsonArray { lonGapInbound, latGapInbound });
+            return pathCoords;
+        }
+
+        // Fallback: synthetic two-point backward projection along current heading
+        return new JsonArray { new JsonArray { lonBwd, latBwd }, new JsonArray { lonGapBwd, latGapBwd } };
+    }
+
+    /// <summary>
     /// Builds the Mapbox overlay string:
     ///   • Red  airport pin — plane's current position
     ///   • Blue home    pin — user's home (map centre reference)
@@ -130,7 +169,8 @@ public sealed class MapboxSnapshotService : IMapSnapshotService
         double planeLat, double planeLon,
         double homeLat,  double homeLon,
         double? headingDegrees,
-        double halfKm)
+        double halfKm,
+        IReadOnlyList<(double Lat, double Lon)>? trajectory = null)
     {
         var ic = System.Globalization.CultureInfo.InvariantCulture;
 
@@ -214,8 +254,10 @@ public sealed class MapboxSnapshotService : IMapSnapshotService
                         ["type"] = "MultiLineString",
                         ["coordinates"] = new JsonArray
                         {
-                            // behind: backward tip → 500 m before the plane
-                            new JsonArray { Coord(lonBwd, latBwd), Coord(lonGapBwd, latGapBwd) },
+                            // behind: real accumulated trajectory if available,
+                            // otherwise synthetic backward projection along current heading
+                            BuildBackSegment(trajectory, planeLat, planeLon, cosLat, gapKm,
+                                             lonBwd, latBwd, lonGapBwd, latGapBwd),
                             // ahead: 500 m after the plane → forward tip
                             new JsonArray { Coord(lonGapFwd, latGapFwd), Coord(lonFwd, latFwd) }
                         }

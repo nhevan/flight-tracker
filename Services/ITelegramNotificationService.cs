@@ -12,7 +12,8 @@ public interface ITelegramNotificationService
     Task NotifyAsync(EnrichedFlightState flight, string direction, double? etaSeconds,
                      RepeatVisitorInfo? visitorInfo, CancellationToken cancellationToken,
                      double homeLat, double homeLon,
-                     double? previousHeading = null);
+                     double? previousHeading = null,
+                     IReadOnlyList<(double Lat, double Lon)>? trajectory = null);
 
     /// <summary>
     /// Sends a plain-text status message (startup notice, error alert, etc.).

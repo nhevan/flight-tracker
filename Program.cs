@@ -110,6 +110,13 @@ TimeSpan pollInterval = TimeSpan.FromSeconds(settings.Polling.IntervalSeconds);
 var previousPositions = new Dictionary<string, (double Lat, double Lon)>(
     StringComparer.OrdinalIgnoreCase);
 
+// Accumulates all GPS positions per ICAO24 during the current continuous visit.
+// Used to draw the full trajectory polyline on course-change map notifications.
+// Entries are removed when the aircraft leaves range, so re-appearing planes
+// start fresh — only the current visit is stored, never historical DB data.
+var positionHistory = new Dictionary<string, List<(double Lat, double Lon)>>(
+    StringComparer.OrdinalIgnoreCase);
+
 // Tracks flights already notified via Telegram.
 // Maps ICAO24 → effective heading at the time the notification was sent so a
 // significant bearing change (≥ 45°) can trigger a fresh notification even when
@@ -129,6 +136,7 @@ while (!cts.Token.IsCancellationRequested)
             settings.HomeLocation.LocationResetRequested = false;
             previousPositions.Clear();
             notifiedIcaos.Clear();
+            positionHistory.Clear();
             string locLabel = settings.HomeLocation.Name is { } n ? $"\"{n}\" " : "";
             Console.WriteLine($"[Spot] Location changed to {locLabel}" +
                               $"({settings.HomeLocation.Latitude:F6}, {settings.HomeLocation.Longitude:F6})" +
@@ -177,6 +185,23 @@ while (!cts.Token.IsCancellationRequested)
                 previousPositions[fs.Icao24] = (fs.Latitude.Value, fs.Longitude.Value);
         }
 
+        // Maintain per-aircraft trajectory history (current visit only).
+        // Append new position, cap at 60 entries (~30 min at 30 s polling),
+        // and remove entries for aircraft that have left range.
+        var currentIcaos = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var ef in enriched)
+        {
+            var fs = ef.State;
+            if (!fs.Latitude.HasValue || !fs.Longitude.HasValue) continue;
+            currentIcaos.Add(fs.Icao24);
+            if (!positionHistory.TryGetValue(fs.Icao24, out var hist))
+                positionHistory[fs.Icao24] = hist = new List<(double, double)>();
+            hist.Add((fs.Latitude.Value, fs.Longitude.Value));
+            if (hist.Count > 60) hist.RemoveAt(0);
+        }
+        foreach (var key in positionHistory.Keys.Except(currentIcaos).ToList())
+            positionHistory.Remove(key);
+
         // Telegram: notify and log when any flight is ≤ 2 minutes from overhead
         foreach (var ef in enriched)
         {
@@ -199,9 +224,15 @@ while (!cts.Token.IsCancellationRequested)
                     homeLat, homeLon);
                 // Query BEFORE logging so the count reflects prior visits only
                 var visitorInfo = await repeatVisitorService.GetVisitorInfoAsync(f.Icao24, cts.Token);
+                IReadOnlyList<(double Lat, double Lon)>? trajectory = bearingChanged
+                    && positionHistory.TryGetValue(f.Icao24, out var hist)
+                    ? hist
+                    : null;
+
                 await telegramService.NotifyAsync(ef, dir ?? "Towards", etaSecs, visitorInfo, cts.Token,
                     homeLat, homeLon,
-                    previousHeading: bearingChanged ? lastHeading : null);
+                    previousHeading: bearingChanged ? lastHeading : null,
+                    trajectory: trajectory);
                 await loggingService.LogAsync(ef, dir ?? "Towards", etaSecs, homeLat, homeLon, settings.HomeLocation.Name, DateTimeOffset.UtcNow, cts.Token);
                 notifiedIcaos[f.Icao24] = effectiveHeading;
             }

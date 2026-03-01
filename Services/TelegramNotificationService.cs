@@ -37,7 +37,8 @@ public sealed class TelegramNotificationService : ITelegramNotificationService
         CancellationToken cancellationToken,
         double homeLat,
         double homeLon,
-        double? previousHeading = null)
+        double? previousHeading = null,
+        IReadOnlyList<(double Lat, double Lon)>? trajectory = null)
     {
         if (!_settings.Enabled
             || string.IsNullOrEmpty(_settings.BotToken)
@@ -53,7 +54,8 @@ public sealed class TelegramNotificationService : ITelegramNotificationService
             byte[]? mapBytes = await _mapService.GetSnapshotAsync(
                 f.Latitude, f.Longitude, f.HeadingDegrees,
                 flight.InferredHeadingDegrees,
-                f.BarometricAltitudeMeters, cancellationToken);
+                f.BarometricAltitudeMeters, cancellationToken,
+                trajectory);
 
             string apiUrl;
             HttpContent requestContent;
