@@ -144,8 +144,8 @@ public sealed class TelegramNotificationService : ITelegramNotificationService
             ? f.Icao24
             : f.Callsign.Trim();
 
-        // FR24 Universal Link — tapping opens the iOS app when FR24 is installed
-        string fr24Url      = $"https://www.flightradar24.com/{Uri.EscapeDataString(callsign)}";
+        // fr24.com short link — iOS hands this directly to the FR24 app
+        string fr24Url      = $"http://fr24.com/{Uri.EscapeDataString(callsign)}";
         string callsignLink = $"<a href=\"{fr24Url}\">{EscapeHtml(callsign)}</a>";
 
         var sb = new System.Text.StringBuilder();
