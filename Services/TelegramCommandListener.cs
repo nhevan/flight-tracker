@@ -58,7 +58,7 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
         await DeleteWebhookAsync(cancellationToken);
 
         long offset = 0;
-        Console.WriteLine("[TelegramListener] Listening for commands (/stats, /spot, /spots, /range, /zoom, /test)...");
+        Console.WriteLine("[TelegramListener] Listening for commands (/stats, /spot, /spots, /range, /zoom, /alt, /test)...");
 
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -107,6 +107,10 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
                     {
                         await HandleZoomCommandAsync(update.Message!.Chat.Id, text, cancellationToken);
                     }
+                    else if (text.StartsWith("/alt", StringComparison.OrdinalIgnoreCase))
+                    {
+                        await HandleAltCommandAsync(update.Message!.Chat.Id, text, cancellationToken);
+                    }
                     else if (text.Equals("/test", StringComparison.OrdinalIgnoreCase))
                     {
                         await HandleTestCommandAsync(update.Message!.Chat.Id, cancellationToken);
@@ -118,7 +122,7 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
                             reply ??
                             "🤷 I didn't recognise that command.\n\n" +
                             "<b>Available commands:</b>\n" +
-                            "/stats · /spot · /spots · /range · /zoom · /test",
+                            "/stats · /spot · /spots · /range · /zoom · /alt · /test",
                             cancellationToken);
                     }
                 }
@@ -413,6 +417,39 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
         Console.WriteLine($"[TelegramListener] /zoom command: ZoomOverride set to {zoom}.");
     }
 
+    private async Task HandleAltCommandAsync(long chatId, string text, CancellationToken cancellationToken)
+    {
+        string[] parts = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+        if (parts.Length == 1)
+        {
+            await SendMessageAsync(chatId,
+                $"✈️ Max altitude is <b>{_settings.MaxAltitudeMeters:F0} m</b>.\n\n" +
+                "Usage: /alt &lt;100–15000&gt;\nExample: /alt 5000",
+                cancellationToken);
+            return;
+        }
+
+        var ic = CultureInfo.InvariantCulture;
+        if (!double.TryParse(parts[1], NumberStyles.Float, ic, out double alt)
+            || alt < 100 || alt > 15_000)
+        {
+            await SendMessageAsync(chatId,
+                $"❌ Invalid altitude <code>{EscapeHtml(parts[1])}</code> — must be a number between 100 and 15 000 m.",
+                cancellationToken);
+            return;
+        }
+
+        _settings.MaxAltitudeMeters = alt;
+        bool saved = PersistAltToSettings(alt);
+        await SendMessageAsync(chatId,
+            $"✈️ Max altitude set to <b>{alt:F0} m</b>.\n\n" +
+            (saved ? "💾 Saved — persists after restarts."
+                   : "⚠️ Could not write to appsettings.json — active now but resets on restart."),
+            cancellationToken);
+        Console.WriteLine($"[TelegramListener] /alt command: MaxAltitudeMeters set to {alt:F0}");
+    }
+
     private async Task HandleTestCommandAsync(long chatId, CancellationToken cancellationToken)
     {
         try
@@ -550,6 +587,32 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
         catch (Exception ex)
         {
             Console.WriteLine($"[TelegramListener] Could not persist range to appsettings.json: {ex.Message}");
+            return false;
+        }
+    }
+
+    private static bool PersistAltToSettings(double alt)
+    {
+        try
+        {
+            string path = Path.Combine(AppContext.BaseDirectory, "appsettings.json");
+            if (!File.Exists(path)) return false;
+
+            var root     = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+            var telegram = root["Telegram"]?.AsObject()
+                           ?? new System.Text.Json.Nodes.JsonObject();
+
+            telegram["MaxAltitudeMeters"] = alt;
+            root["Telegram"] = telegram;
+            File.WriteAllText(path, root.ToJsonString(
+                new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+
+            Console.WriteLine("[TelegramListener] /alt persisted to appsettings.json");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[TelegramListener] Could not persist alt to appsettings.json: {ex.Message}");
             return false;
         }
     }
