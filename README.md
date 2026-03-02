@@ -88,7 +88,8 @@ All settings live in `appsettings.json` (gitignored — never committed).
     "Enabled": false,
     "AccessToken": "YOUR_MAPBOX_ACCESS_TOKEN",
     "Style": "mapbox/dark-v11",
-    "ZoomOverride": null
+    "ZoomOverride": null,
+    "BearingOverride": null
   }
 }
 ```
@@ -155,6 +156,7 @@ When enabled:
 | `AccessToken` | — | Mapbox access token (get from [account.mapbox.com](https://account.mapbox.com)) |
 | `Style` | `mapbox/dark-v11` | Map style — also supports `mapbox/satellite-v9` and `mapbox/streets-v12` |
 | `ZoomOverride` | `null` | Fixed zoom level (1–22). When set, all maps use this zoom instead of the automatic distance-based selection. Updated at runtime by `/zoom` |
+| `BearingOverride` | `null` | Map bearing in degrees clockwise from north (0–359). `null` uses the default 350° (10° anti-clockwise). Updated at runtime by `/rotate` |
 
 When enabled, each notification includes a static map centred on your home, showing the
 aircraft's position (red pin), your home (blue pin), and the heading trajectory (orange
@@ -186,6 +188,7 @@ spots - List all known spot names
 range - Set visual range filter in km
 zoom - Set map zoom level (1-22) or auto
 alt - Set max altitude filter in metres
+rotate - Set map bearing in degrees (0-359) or reset
 test - Send a test flight notification
 ```
 
@@ -202,6 +205,9 @@ test - Send a test flight notification
 | `/zoom auto` | Revert to automatic distance-based zoom selection |
 | `/alt <100–15000>` | Set the max altitude filter in metres (e.g. `/alt 5000`). Persisted to `appsettings.json` |
 | `/alt` | Show the current max altitude setting |
+| `/rotate <0–359>` | Set the map bearing in degrees clockwise from north (e.g. `/rotate 0` = north up, `/rotate 90` = east up). Persisted to `appsettings.json` |
+| `/rotate reset` | Revert to the default bearing (350° — 10° anti-clockwise) |
+| `/rotate` | Show the current bearing |
 | `/test` | Send a synthetic notification through the full pipeline to verify everything is wired up correctly |
 
 Any other text is forwarded to Claude (when Anthropic is enabled), which replies helpfully in plain text.

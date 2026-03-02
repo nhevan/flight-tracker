@@ -61,7 +61,7 @@ public sealed class MapboxSnapshotService : IMapSnapshotService
                          $"/{overlays}" +
                          $"/{_home.Longitude.ToString("F6", System.Globalization.CultureInfo.InvariantCulture)}," +
                          $"{_home.Latitude.ToString("F6", System.Globalization.CultureInfo.InvariantCulture)}," +
-                         $"{zoom},350" +
+                         $"{zoom},{_settings.BearingOverride ?? 350}" +
                          $"/{ImageWidth}x{ImageHeight}@2x" +
                          $"?access_token={Uri.EscapeDataString(_settings.AccessToken)}";
 

@@ -114,4 +114,11 @@ public sealed class MapboxSettings
     /// of the automatic distance-based selection. null = automatic. Set via /zoom command.
     /// </summary>
     public int? ZoomOverride { get; set; }
+
+    /// <summary>
+    /// Map bearing in degrees clockwise from north (0–359).
+    /// 0 = north up, 350 = 10° anti-clockwise (default). null = use default (350).
+    /// Set via /rotate command.
+    /// </summary>
+    public int? BearingOverride { get; set; }
 }

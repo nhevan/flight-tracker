@@ -58,7 +58,7 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
         await DeleteWebhookAsync(cancellationToken);
 
         long offset = 0;
-        Console.WriteLine("[TelegramListener] Listening for commands (/stats, /spot, /spots, /range, /zoom, /alt, /test)...");
+        Console.WriteLine("[TelegramListener] Listening for commands (/stats, /spot, /spots, /range, /zoom, /alt, /rotate, /test)...");
 
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -111,6 +111,10 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
                     {
                         await HandleAltCommandAsync(update.Message!.Chat.Id, text, cancellationToken);
                     }
+                    else if (text.StartsWith("/rotate", StringComparison.OrdinalIgnoreCase))
+                    {
+                        await HandleRotateCommandAsync(update.Message!.Chat.Id, text, cancellationToken);
+                    }
                     else if (text.Equals("/test", StringComparison.OrdinalIgnoreCase))
                     {
                         await HandleTestCommandAsync(update.Message!.Chat.Id, cancellationToken);
@@ -122,7 +126,7 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
                             reply ??
                             "🤷 I didn't recognise that command.\n\n" +
                             "<b>Available commands:</b>\n" +
-                            "/stats · /spot · /spots · /range · /zoom · /alt · /test",
+                            "/stats · /spot · /spots · /range · /zoom · /alt · /rotate · /test",
                             cancellationToken);
                     }
                 }
@@ -647,6 +651,83 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
         catch (Exception ex)
         {
             Console.WriteLine($"[TelegramListener] Could not persist zoom to appsettings.json: {ex.Message}");
+            return false;
+        }
+    }
+
+    private async Task HandleRotateCommandAsync(long chatId, string text, CancellationToken cancellationToken)
+    {
+        string[] parts = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+        if (parts.Length == 1)
+        {
+            int current = _mapboxSettings.BearingOverride ?? 350;
+            await SendMessageAsync(chatId,
+                $"🗺️ Map bearing is <b>{current}°</b> clockwise from north.\n\n" +
+                "Usage: /rotate &lt;0–359&gt; or /rotate reset\nExample: /rotate 45",
+                cancellationToken);
+            return;
+        }
+
+        string arg = parts[1];
+
+        if (arg.Equals("reset", StringComparison.OrdinalIgnoreCase))
+        {
+            _mapboxSettings.BearingOverride = null;
+            PersistBearingToSettings(null);
+            await SendMessageAsync(chatId,
+                "🗺️ Map bearing reset to default <b>350°</b> (10° anti-clockwise).",
+                cancellationToken);
+            Console.WriteLine("[TelegramListener] /rotate command: BearingOverride cleared (default 350)");
+            return;
+        }
+
+        var ic = CultureInfo.InvariantCulture;
+        if (!int.TryParse(arg, System.Globalization.NumberStyles.Integer, ic, out int bearing)
+            || bearing < 0 || bearing > 359)
+        {
+            await SendMessageAsync(chatId,
+                $"❌ Invalid bearing <code>{EscapeHtml(arg)}</code> — must be an integer between 0 and 359.",
+                cancellationToken);
+            return;
+        }
+
+        _mapboxSettings.BearingOverride = bearing;
+        bool saved = PersistBearingToSettings(bearing);
+        await SendMessageAsync(chatId,
+            $"🗺️ Map bearing set to <b>{bearing}°</b> clockwise from north.\n\n" +
+            (saved ? "💾 Saved — persists after restarts."
+                   : "⚠️ Could not write to appsettings.json — active now but resets on restart."),
+            cancellationToken);
+        Console.WriteLine($"[TelegramListener] /rotate command: BearingOverride set to {bearing}");
+    }
+
+    private static bool PersistBearingToSettings(int? bearing)
+    {
+        try
+        {
+            string path = Path.Combine(AppContext.BaseDirectory, "appsettings.json");
+            if (!File.Exists(path)) return false;
+
+            var root   = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+            var mapbox = root["Mapbox"]?.AsObject()
+                         ?? new System.Text.Json.Nodes.JsonObject();
+
+            if (bearing.HasValue)
+                mapbox["BearingOverride"] = bearing.Value;
+            else
+                mapbox.Remove("BearingOverride");
+
+            root["Mapbox"] = mapbox;
+            File.WriteAllText(path, root.ToJsonString(
+                new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+
+            Console.WriteLine("[TelegramListener] /rotate persisted to appsettings.json");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[TelegramListener] Could not persist bearing to appsettings.json: {ex.Message}");
             return false;
         }
     }
