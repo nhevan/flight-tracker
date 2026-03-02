@@ -108,4 +108,10 @@ public sealed class MapboxSettings
     /// Mapbox map style. Options: mapbox/dark-v11 (default), mapbox/satellite-v9, mapbox/streets-v12
     /// </summary>
     public string Style { get; set; } = "mapbox/dark-v11";
+
+    /// <summary>
+    /// Fixed zoom level override (1–22). When set, every map snapshot uses this zoom instead
+    /// of the automatic distance-based selection. null = automatic. Set via /zoom command.
+    /// </summary>
+    public int? ZoomOverride { get; set; }
 }

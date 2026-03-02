@@ -50,7 +50,7 @@ public sealed class MapboxSnapshotService : IMapSnapshotService
             double dlon         = (_home.Longitude - lon.Value) * 111.0 * Math.Cos(lat.Value * Math.PI / 180.0);
             double distToHomeKm = Math.Sqrt(dlat * dlat + dlon * dlon);
 
-            int    zoom     = DistanceToZoom(distToHomeKm);
+            int    zoom     = _settings.ZoomOverride ?? DistanceToZoom(distToHomeKm);
             double halfKm   = ZoomToHalfTrajectoryKm(zoom);
             string overlays = BuildOverlays(lat.Value, lon.Value, _home.Latitude, _home.Longitude,
                                             effectiveHeading, halfKm, trajectory);

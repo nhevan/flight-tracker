@@ -16,6 +16,7 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
 {
     private readonly TelegramSettings _settings;
     private readonly HomeLocationSettings _homeLocation;
+    private readonly MapboxSettings _mapboxSettings;
     private readonly IFlightLoggingService _loggingService;
     private readonly ITelegramNotificationService _notificationService;
     private readonly IAnthropicChatService _chatService;
@@ -35,6 +36,7 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
     {
         _settings             = settings.Telegram;
         _homeLocation         = settings.HomeLocation;
+        _mapboxSettings       = settings.Mapbox;
         _loggingService       = loggingService;
         _notificationService  = notificationService;
         _chatService          = chatService;
@@ -56,7 +58,7 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
         await DeleteWebhookAsync(cancellationToken);
 
         long offset = 0;
-        Console.WriteLine("[TelegramListener] Listening for commands (/stats, /spot, /spots, /range, /test)...");
+        Console.WriteLine("[TelegramListener] Listening for commands (/stats, /spot, /spots, /range, /zoom, /test)...");
 
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -101,6 +103,10 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
                     {
                         await HandleRangeCommandAsync(update.Message!.Chat.Id, text, cancellationToken);
                     }
+                    else if (text.StartsWith("/zoom", StringComparison.OrdinalIgnoreCase))
+                    {
+                        await HandleZoomCommandAsync(update.Message!.Chat.Id, text, cancellationToken);
+                    }
                     else if (text.Equals("/test", StringComparison.OrdinalIgnoreCase))
                     {
                         await HandleTestCommandAsync(update.Message!.Chat.Id, cancellationToken);
@@ -112,7 +118,7 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
                             reply ??
                             "🤷 I didn't recognise that command.\n\n" +
                             "<b>Available commands:</b>\n" +
-                            "/stats · /spot · /spots · /range · /test",
+                            "/stats · /spot · /spots · /range · /zoom · /test",
                             cancellationToken);
                     }
                 }
@@ -357,6 +363,56 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
         await SendMessageAsync(chatId, $"<b>Known spots</b>\n{body}", cancellationToken);
     }
 
+    private async Task HandleZoomCommandAsync(long chatId, string text, CancellationToken cancellationToken)
+    {
+        string[] parts = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+        if (parts.Length == 1)
+        {
+            // /zoom — show current setting
+            string current = _mapboxSettings.ZoomOverride.HasValue
+                ? $"zoom is fixed at <b>{_mapboxSettings.ZoomOverride.Value}</b>"
+                : "zoom is <b>auto</b> (distance-based)";
+            await SendMessageAsync(chatId,
+                $"🗺️ Map {current}.\n\nUsage:\n" +
+                "  /zoom &lt;1–22&gt; — fix zoom to a specific level\n" +
+                "  /zoom auto     — revert to distance-based auto zoom",
+                cancellationToken);
+            return;
+        }
+
+        string arg = parts[1].Trim();
+
+        if (arg.Equals("auto", StringComparison.OrdinalIgnoreCase))
+        {
+            _mapboxSettings.ZoomOverride = null;
+            bool saved = PersistZoomToSettings(null);
+            await SendMessageAsync(chatId,
+                "🗺️ Map zoom reset to <b>auto</b> (distance-based).\n\n" +
+                (saved ? "💾 Saved — persists after restarts." : "⚠️ Could not write to appsettings.json — active now but resets on restart."),
+                cancellationToken);
+            Console.WriteLine("[TelegramListener] /zoom auto: reverted to distance-based zoom.");
+            return;
+        }
+
+        if (!int.TryParse(arg, out int zoom) || zoom < 1 || zoom > 22)
+        {
+            await SendMessageAsync(chatId,
+                $"❌ Invalid zoom <code>{EscapeHtml(arg)}</code> — must be a number 1–22 or \"auto\".\n" +
+                "Example: /zoom 12 or /zoom auto",
+                cancellationToken);
+            return;
+        }
+
+        _mapboxSettings.ZoomOverride = zoom;
+        bool savedFixed = PersistZoomToSettings(zoom);
+        await SendMessageAsync(chatId,
+            $"🗺️ Map zoom fixed at <b>{zoom}</b>. Send /test to preview.\n\n" +
+            (savedFixed ? "💾 Saved — persists after restarts." : "⚠️ Could not write to appsettings.json — active now but resets on restart."),
+            cancellationToken);
+        Console.WriteLine($"[TelegramListener] /zoom command: ZoomOverride set to {zoom}.");
+    }
+
     private async Task HandleTestCommandAsync(long chatId, CancellationToken cancellationToken)
     {
         try
@@ -494,6 +550,36 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
         catch (Exception ex)
         {
             Console.WriteLine($"[TelegramListener] Could not persist range to appsettings.json: {ex.Message}");
+            return false;
+        }
+    }
+
+    private static bool PersistZoomToSettings(int? zoom)
+    {
+        try
+        {
+            string path = Path.Combine(AppContext.BaseDirectory, "appsettings.json");
+            if (!File.Exists(path)) return false;
+
+            var root   = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+            var mapbox = root["Mapbox"]?.AsObject()
+                         ?? new System.Text.Json.Nodes.JsonObject();
+
+            if (zoom.HasValue)
+                mapbox["ZoomOverride"] = zoom.Value;
+            else
+                mapbox.Remove("ZoomOverride");
+
+            root["Mapbox"] = mapbox;
+            File.WriteAllText(path, root.ToJsonString(
+                new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+
+            Console.WriteLine($"[TelegramListener] /zoom persisted to appsettings.json");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[TelegramListener] Could not persist zoom to appsettings.json: {ex.Message}");
             return false;
         }
     }
