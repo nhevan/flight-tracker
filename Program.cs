@@ -222,8 +222,11 @@ while (!cts.Token.IsCancellationRequested)
                 string? dir = FlightDirectionHelper.Classify(
                     f.Latitude, f.Longitude, effectiveHeading, f.DistanceKm,
                     homeLat, homeLon);
-                // Query BEFORE logging so the count reflects prior visits only
-                var visitorInfo = await repeatVisitorService.GetVisitorInfoAsync(f.Icao24, cts.Token);
+                // Query repeat-visitor info only for initial notifications;
+                // course-change re-notifications are part of the same overflight, not a new visit.
+                var visitorInfo = bearingChanged
+                    ? null
+                    : await repeatVisitorService.GetVisitorInfoAsync(f.Icao24, cts.Token);
                 IReadOnlyList<(double Lat, double Lon)>? trajectory = bearingChanged
                     && positionHistory.TryGetValue(f.Icao24, out var hist)
                     ? hist
@@ -233,7 +236,10 @@ while (!cts.Token.IsCancellationRequested)
                     homeLat, homeLon,
                     previousHeading: bearingChanged ? lastHeading : null,
                     trajectory: trajectory);
-                await loggingService.LogAsync(ef, dir ?? "Towards", etaSecs, homeLat, homeLon, settings.HomeLocation.Name, DateTimeOffset.UtcNow, cts.Token);
+                // Only log as a new visit for initial notifications — course-change re-notifications
+                // are part of the same overflight and must not inflate the visit counter.
+                if (!bearingChanged)
+                    await loggingService.LogAsync(ef, dir ?? "Towards", etaSecs, homeLat, homeLon, settings.HomeLocation.Name, DateTimeOffset.UtcNow, cts.Token);
                 notifiedIcaos[f.Icao24] = effectiveHeading;
             }
         }
