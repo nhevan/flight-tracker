@@ -13,13 +13,13 @@ a low-altitude aircraft is approaching overhead.
 - **Telegram notifications** when a flight is ≤ 2 minutes from overhead and below your altitude threshold:
   - 🔁 Repeat visitor detection — "Welcome back! PH-BHO was last seen 3 days ago"
   - 🚨 Emergency and 🪖 military flagging
-  - ↩️ Course-change re-notification when a tracked flight changes bearing significantly
+  - ↩️ Course-change re-notification when a tracked flight changes bearing significantly, with full accumulated trajectory polyline overlay on the map
   - Full route: `Barcelona (BCN) → Amsterdam (AMS) · arriving in ~2h 15m`
   - Aircraft photo (from planespotters.net) and live Mapbox map with heading trajectory
   - AI-generated facts in the plane's own voice (via Anthropic Claude) — omitted on course-change re-notifications
   - Wind speed/direction and outside air temperature when broadcast by the aircraft
   - Tappable callsign link that opens FlightRadar24 centred on your spot (zoom 11)
-- **Telegram bot commands** — manage spots, adjust range, query stats, and send test notifications
+- **Telegram bot commands** — manage spots, adjust range and altitude filter, control map zoom, query stats, and send test notifications
 - **Smart fallback replies** — unknown messages are forwarded to Claude for a helpful plain-text response
 - **Flight statistics** via `/stats` — total sightings, busiest hours, streaks, gaps
 - **Named spot management** — save and switch between multiple named spotting locations
@@ -87,7 +87,8 @@ All settings live in `appsettings.json` (gitignored — never committed).
   "Mapbox": {
     "Enabled": false,
     "AccessToken": "YOUR_MAPBOX_ACCESS_TOKEN",
-    "Style": "mapbox/dark-v11"
+    "Style": "mapbox/dark-v11",
+    "ZoomOverride": null
   }
 }
 ```
@@ -153,16 +154,23 @@ When enabled:
 | `Enabled` | `false` | Set to `true` to include a live map image in each notification |
 | `AccessToken` | — | Mapbox access token (get from [account.mapbox.com](https://account.mapbox.com)) |
 | `Style` | `mapbox/dark-v11` | Map style — also supports `mapbox/satellite-v9` and `mapbox/streets-v12` |
+| `ZoomOverride` | `null` | Fixed zoom level (1–22). When set, all maps use this zoom instead of the automatic distance-based selection. Updated at runtime by `/zoom` |
 
 When enabled, each notification includes a static map centred on your home, showing the
 aircraft's position (red pin), your home (blue pin), and the heading trajectory (orange
-line). Zoom level adjusts automatically:
+line with direction arrow). On course-change re-notifications the full accumulated GPS
+track is drawn as the trajectory polyline.
+
+Zoom level is selected automatically based on the plane's distance from home:
 
 | Distance from home | Zoom | Approximate view width |
 |--------------------|------|------------------------|
-| > 13 km | 9 | ~113 km — wide regional view |
-| 3–13 km | 11 | ~28 km — city-level |
-| < 3 km | 13 | ~7 km — neighbourhood close-up |
+| > 13 km | 10 | ~56 km — wide regional view |
+| 3–13 km | 12 | ~14 km — city-level |
+| < 3 km | 14 | ~3.5 km — neighbourhood close-up |
+
+Use `/zoom <level>` to override the automatic selection; `/zoom auto` reverts to the
+distance-based logic. The current override is persisted to `appsettings.json`.
 
 The map is fetched server-side so the Mapbox token is never sent to Telegram. If the map
 is unavailable the notification falls back to the aircraft photo or plain text.
@@ -172,11 +180,13 @@ is unavailable the notification falls back to the aircraft photo or plain text.
 Register these with [@BotFather](https://t.me/BotFather) via `/setcommands`:
 
 ```
-stats - Show aggregated flight statistics for the current spot
-spot - Set spot by coords (/spot <lat> <lon> [name]) or switch by name (/spot <name>)
+stats - Show flight statistics for the current spot
+spot - Set spotting location by coordinates or name
 spots - List all known spot names
-range - Set the visual range filter in km (/range <km> or /range 0 to disable)
-test - Send a synthetic test flight notification
+range - Set visual range filter in km
+zoom - Set map zoom level (1-22) or auto
+alt - Set max altitude filter in metres
+test - Send a test flight notification
 ```
 
 ### Command reference
@@ -187,7 +197,11 @@ test - Send a synthetic test flight notification
 | `/spot <lat> <lon> [name]` | Set the active spotting location by coordinates. The optional name is saved and shown in notifications |
 | `/spot <name>` | Switch to a previously named spot by looking up its most recent coordinates from the flight history database |
 | `/spots` | List all named spots recorded in the flight history database, plus the current active spot if named |
-| `/range <km>` | Update `VisualRangeKm` at runtime (e.g. `/range 30`). Use `/range 0` to disable filtering |
+| `/range <km>` | Update `VisualRangeKm` at runtime (e.g. `/range 30`). Use `/range 0` to disable filtering. Persisted to `appsettings.json` |
+| `/zoom <1–22>` | Pin the Mapbox map to a fixed zoom level (e.g. `/zoom 12`). Persisted to `appsettings.json` |
+| `/zoom auto` | Revert to automatic distance-based zoom selection |
+| `/alt <100–15000>` | Set the max altitude filter in metres (e.g. `/alt 5000`). Persisted to `appsettings.json` |
+| `/alt` | Show the current max altitude setting |
 | `/test` | Send a synthetic notification through the full pipeline to verify everything is wired up correctly |
 
 Any other text is forwarded to Claude (when Anthropic is enabled), which replies helpfully in plain text.
