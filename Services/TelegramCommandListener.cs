@@ -454,9 +454,13 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
     {
         try
         {
-            // Place the test plane ~15 km north of home heading due south (toward home)
-            double testLat = _homeLocation.Latitude + 0.135;
-            double testLon = _homeLocation.Longitude;
+            // Place the test plane at 60 % of the map's visible half-height north of home
+            // so it is always in frame regardless of the current zoom level.
+            int    effectiveZoom = _mapboxSettings.ZoomOverride ?? 10;
+            double halfKm        = Math.Max(2.5, 40.0 / Math.Pow(2.0, effectiveZoom - 10));
+            double testDistKm    = halfKm * 0.6;
+            double testLat       = _homeLocation.Latitude + testDistKm / 111.0;
+            double testLon       = _homeLocation.Longitude;
             double distKm  = Haversine.DistanceKm(
                 testLat, testLon, _homeLocation.Latitude, _homeLocation.Longitude);
 

@@ -112,17 +112,12 @@ public sealed class MapboxSnapshotService : IMapSnapshotService
     /// <summary>
     /// Half-length of the trajectory line (km) in each direction from the plane.
     /// Long enough that the full path through the home area is always visible.
-    /// Each zoom step doubles pixel density (halves km coverage), so halfKm halves too.
-    ///   zoom 10 → ~56 km wide  → halfKm 40 km
-    ///   zoom 12 → ~14 km wide  → halfKm 10 km
-    ///   zoom 14 → ~3.5 km wide → halfKm  2.5 km
+    /// Each zoom step doubles pixel density (halves km coverage), so halfKm halves too:
+    ///   zoom  8 → 160 km  |  zoom 10 → 40 km  |  zoom 12 → 10 km  |  zoom 14+ → 2.5 km
+    /// Formula: 40 / 2^(zoom-10), clamped to a minimum of 2.5 km.
     /// </summary>
-    private static double ZoomToHalfTrajectoryKm(int zoom) => zoom switch
-    {
-        10 => 40.0,   // > 13 km  — wide regional view
-        12 => 10.0,   // 3–13 km  — city-level
-        _  => 2.5     // < 3 km   — neighbourhood (zoom 14)
-    };
+    private static double ZoomToHalfTrajectoryKm(int zoom) =>
+        Math.Max(2.5, 40.0 / Math.Pow(2.0, zoom - 10));
 
     /// <summary>
     /// Builds the "backward" MultiLineString segment.
