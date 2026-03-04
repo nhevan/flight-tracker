@@ -8,10 +8,12 @@ using FlightTracker.Models;
 public sealed record AirwayPathResult(
     /// <summary>Ordered waypoints starting at the aircraft, ending near destination.</summary>
     List<(double Lat, double Lon)> Points,
-    /// <summary>Name of the airway that was snapped to (e.g. "UL607").</summary>
+    /// <summary>Name of the first (or only) airway snapped to — kept for compatibility.</summary>
     string AirwayName,
-    /// <summary>Number of airway segments examined in the bounding-box query.</summary>
-    int SegmentsScanned
+    /// <summary>Total number of airway segments examined across all bounding-box queries.</summary>
+    int SegmentsScanned,
+    /// <summary>Ordered list of every airway name used in the chained path (e.g. ["UY131","Z319","UL194","UN860"]).</summary>
+    IReadOnlyList<string> AirwaysUsed
 );
 
 /// <summary>

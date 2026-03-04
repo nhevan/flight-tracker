@@ -83,19 +83,22 @@ public sealed class PredictedPathService : IPredictedPathService
 
             if (result is not null && result.Points.Count >= 2)
             {
-                string log = $"Navigraph ✓ airway {result.AirwayName} · {result.Points.Count} wpts ({result.SegmentsScanned} segs scanned)\nARINC: not active";
-                Console.WriteLine($"[PredictedPath] {callsign}: airway path with {result.Points.Count} points");
+                string chainStr = result.AirwaysUsed.Count > 1
+                    ? string.Join(" → ", result.AirwaysUsed)
+                    : result.AirwayName;
+                string log = $"Navigraph ✓ {chainStr} · {result.Points.Count} wpts ({result.SegmentsScanned} segs scanned)\nARINC: terminal area only (4 NL fixes, not applicable)";
+                Console.WriteLine($"[PredictedPath] {callsign}: airway path with {result.Points.Count} points via {chainStr}");
                 return new PredictedFlightPath(result.Points.AsReadOnly(), NavDataLog: log);
             }
 
             string segsInfo = result is null ? "N/A" : $"{result.SegmentsScanned} segs";
-            string noAirwayLog = $"Navigraph ✗ no airway matched (hdg {acHeading.Value:F0}°, {segsInfo} scanned)\nARINC: not active\nFallback: direct path";
+            string noAirwayLog = $"Navigraph ✗ no airway matched (hdg {acHeading.Value:F0}°, {segsInfo} scanned)\nARINC: terminal area only (4 NL fixes, not applicable)\nFallback: direct path";
             Console.WriteLine($"[PredictedPath] {callsign}: no airway found — falling back to direct path");
             return BuildDirectPath(ef, noAirwayLog);
         }
 
         // 2. Fall back to direct origin → dest (no heading available)
-        string noHeadingLog = "Navigraph: skipped (no heading data)\nARINC: not active\nFallback: direct path";
+        string noHeadingLog = "Navigraph: skipped (no heading data)\nARINC: terminal area only (4 NL fixes, not applicable)\nFallback: direct path";
         return BuildDirectPath(ef, noHeadingLog);
     }
 
@@ -125,7 +128,7 @@ public sealed class PredictedPathService : IPredictedPathService
             return null;
         }
 
-        string log = navDataLog ?? "Navigraph: skipped\nARINC: not active\nFallback: direct path";
+        string log = navDataLog ?? "Navigraph: skipped\nARINC: terminal area only (4 NL fixes, not applicable)\nFallback: direct path";
         Console.WriteLine($"[PredictedPath] {callsign}: using direct path (origin → dest)");
         return new PredictedFlightPath(points.AsReadOnly(), IsDirect: true, NavDataLog: log);
     }

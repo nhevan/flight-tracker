@@ -74,6 +74,9 @@ public sealed class NavigraphNavDataService : INavigraphNavDataService
         }
     }
 
+    // Maximum number of airways to chain together before giving up
+    private const int MaxAirwayChain = 8;
+
     // ── Airway snapping ───────────────────────────────────────────────────────
 
     public AirwayPathResult? GetAirwayPath(
@@ -82,34 +85,68 @@ public sealed class NavigraphNavDataService : INavigraphNavDataService
     {
         try
         {
-            // If already close to destination, no point snapping to airways.
             if (Haversine.DistanceKm(acLat, acLon, destLat, destLon) < StarCutoffKm)
                 return null;
 
-            var (candidate, segsScanned) = FindBestSegment(acLat, acLon, acHeadingDeg, destLat, destLon);
-            if (candidate is null) return null;
+            var allPoints       = new List<(double Lat, double Lon)>();
+            var airwaysUsed     = new List<string>();
+            var usedAirwayKeys  = new HashSet<(string Name, int Frag)>();
+            int totalSegsScanned = 0;
 
-            var waypoints = FollowAirway(
-                candidate.AirwayName,
-                candidate.FragmentNo,
-                candidate.SequenceNo,
-                candidate.ForwardDirection,
-                destLat, destLon);
+            double curLat     = acLat;
+            double curLon     = acLon;
+            double curHeading = acHeadingDeg;
 
-            if (waypoints.Count < 2) return null;
+            for (int chain = 0; chain < MaxAirwayChain; chain++)
+            {
+                if (Haversine.DistanceKm(curLat, curLon, destLat, destLon) < StarCutoffKm)
+                    break;
 
-            // Prepend aircraft position, append destination
-            var path = new List<(double Lat, double Lon)>(waypoints.Count + 2);
+                var (candidate, segsScanned) = FindBestSegment(curLat, curLon, curHeading, destLat, destLon);
+                totalSegsScanned += segsScanned;
+
+                if (candidate is null)
+                    break;
+
+                var key = (candidate.AirwayName, candidate.FragmentNo);
+                if (!usedAirwayKeys.Add(key))
+                    break;  // prevent revisiting the same airway fragment
+
+                var waypoints = FollowAirway(
+                    candidate.AirwayName, candidate.FragmentNo,
+                    candidate.SequenceNo, candidate.ForwardDirection,
+                    destLat, destLon);
+
+                if (waypoints.Count == 0)
+                    break;
+
+                airwaysUsed.Add(candidate.AirwayName);
+                allPoints.AddRange(waypoints);
+
+                curLat  = waypoints[^1].Lat;
+                curLon  = waypoints[^1].Lon;
+                // Point the next search heading toward the destination
+                curHeading = FlyByArcHelper.BearingDeg(curLat, curLon, destLat, destLon);
+            }
+
+            if (allPoints.Count < 1) return null;
+
+            // Prepend aircraft position, append destination if far enough away
+            var path = new List<(double Lat, double Lon)>(allPoints.Count + 2);
             path.Add((acLat, acLon));
-            path.AddRange(waypoints);
-            if (Haversine.DistanceKm(waypoints[^1].Lat, waypoints[^1].Lon, destLat, destLon) > 5.0)
+            path.AddRange(allPoints);
+            if (Haversine.DistanceKm(allPoints[^1].Lat, allPoints[^1].Lon, destLat, destLon) > 5.0)
                 path.Add((destLat, destLon));
 
+            if (path.Count < 2) return null;
+
+            string firstName = airwaysUsed.Count > 0 ? airwaysUsed[0] : "?";
             Console.WriteLine(
-                $"[Navigraph] Airway snapped to {candidate.AirwayName}: " +
+                $"[Navigraph] Chained {airwaysUsed.Count} airway(s) " +
+                $"({string.Join("→", airwaysUsed)}): " +
                 $"{path.Count} points toward ({destLat:F2},{destLon:F2})");
 
-            return new AirwayPathResult(path, candidate.AirwayName, segsScanned);
+            return new AirwayPathResult(path, firstName, totalSegsScanned, airwaysUsed.AsReadOnly());
         }
         catch (Exception ex)
         {
