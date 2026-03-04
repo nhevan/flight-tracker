@@ -538,7 +538,11 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
                     ? "⚡ Direct path only (no airway matched)"
                     : $"✅ {predictedPath.Points.Count} waypoints via airways";
 
-            await SendMessageAsync(chatId, $"✅ <b>{EscapeHtml(callsign)}</b> plotted! {pathSummary}", cancellationToken);
+            string navLog = predictedPath?.NavDataLog ?? "Nav data: unavailable";
+            await SendMessageAsync(chatId,
+                $"✅ <b>{EscapeHtml(callsign)}</b> plotted! {pathSummary}\n\n" +
+                $"<pre>{EscapeHtml(navLog)}</pre>",
+                cancellationToken);
             Console.WriteLine($"[TelegramListener] /plot {callsign}: {pathSummary}");
         }
         catch (Exception ex)

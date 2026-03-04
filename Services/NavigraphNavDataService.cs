@@ -22,9 +22,11 @@ public sealed class NavigraphNavDataService : INavigraphNavDataService
     // How many degrees either side of aircraft heading we consider "aligned"
     private const double HeadingToleranceDeg = 45.0;
 
-    // Bounding-box half-width used for candidate segment search (degrees)
-    private const double SearchHalfDegLat = 0.7;   // ≈ 78 km
-    private const double SearchHalfDegLon = 1.0;   // ≈ 70 km at 52°N
+    // Bounding-box half-width used for candidate segment search (degrees).
+    // Wide enough to catch segments where the aircraft is between waypoints
+    // (EU airways typically have 30-100 nm / 55-185 km waypoint spacing).
+    private const double SearchHalfDegLat = 2.5;   // ≈ 278 km
+    private const double SearchHalfDegLon = 3.5;   // ≈ 245 km at 52°N
 
     // Once the aircraft is within this distance of the destination, stop
     // following airways and draw direct.
@@ -109,8 +111,16 @@ public sealed class NavigraphNavDataService : INavigraphNavDataService
     {
         try
         {
-            if (Haversine.DistanceKm(acLat, acLon, destLat, destLon) < StarCutoffKm)
+            double totalDist = Haversine.DistanceKm(acLat, acLon, destLat, destLon);
+            Console.WriteLine(
+                $"[Navigraph] GetAirwayPath: pos=({acLat:F3},{acLon:F3}) hdg={acHeadingDeg:F0}° " +
+                $"dest=({destLat:F3},{destLon:F3}) dist={totalDist:F0}km");
+
+            if (totalDist < StarCutoffKm)
+            {
+                Console.WriteLine($"[Navigraph] Already within {StarCutoffKm}km of dest — skipping");
                 return null;
+            }
 
             var allPoints       = new List<(double Lat, double Lon)>();
             var airwaysUsed     = new List<string>();
@@ -130,7 +140,12 @@ public sealed class NavigraphNavDataService : INavigraphNavDataService
                 totalSegsScanned += segsScanned;
 
                 if (candidate is null)
+                {
+                    Console.WriteLine($"[Navigraph] Chain {chain}: no candidate found ({segsScanned} segs scanned) — stopping");
                     break;
+                }
+
+                Console.WriteLine($"[Navigraph] Chain {chain}: best={candidate.AirwayName} frag={candidate.FragmentNo} seq={candidate.SequenceNo} fwd={candidate.ForwardDirection} score={candidate.Score:F2} ({segsScanned} segs)");
 
                 var key = (candidate.AirwayName, candidate.FragmentNo);
                 if (!usedAirwayKeys.Add(key))
@@ -192,7 +207,9 @@ public sealed class NavigraphNavDataService : INavigraphNavDataService
         using var conn = OpenConnection();
         using var cmd  = conn.CreateCommand();
 
-        // Spatial bounding-box query using the pre-computed bbox columns
+        // Find segments where at least one endpoint is actually near the aircraft.
+        // The fragment-bbox columns (left_lonx etc.) are kept as a coarse index hint;
+        // the from/to coordinate filters are the precise geometric filter.
         cmd.CommandText = """
             SELECT airway_name, airway_fragment_no, sequence_no,
                    from_laty, from_lonx, to_laty, to_lonx
@@ -201,6 +218,10 @@ public sealed class NavigraphNavDataService : INavigraphNavDataService
               AND  right_lonx  >= @lonMin
               AND  bottom_laty <= @latMax
               AND  top_laty    >= @latMin
+              AND  (
+                (from_laty BETWEEN @latMin AND @latMax AND from_lonx BETWEEN @lonMin AND @lonMax) OR
+                (to_laty   BETWEEN @latMin AND @latMax AND to_lonx   BETWEEN @lonMin AND @lonMax)
+              )
             """;
         cmd.Parameters.AddWithValue("@latMin", acLat - SearchHalfDegLat);
         cmd.Parameters.AddWithValue("@latMax", acLat + SearchHalfDegLat);
