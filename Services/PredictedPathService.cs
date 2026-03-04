@@ -91,9 +91,18 @@ public sealed class PredictedPathService : IPredictedPathService
                 return new PredictedFlightPath(result.Points.AsReadOnly(), NavDataLog: log);
             }
 
-            string segsInfo = result is null ? "N/A" : $"{result.SegmentsScanned} segs";
-            string noAirwayLog = $"Navigraph ✗ no airway matched (hdg {acHeading.Value:F0}°, {segsInfo} scanned)\nARINC: terminal area only (4 NL fixes, not applicable)\nFallback: direct path";
-            Console.WriteLine($"[PredictedPath] {callsign}: no airway found — falling back to direct path");
+            string segsInfo = result?.SegmentsScanned.ToString() ?? "N/A";
+            string noAirwayLog;
+            if (!_navData.IsAvailable)
+            {
+                noAirwayLog = "Navigraph ✗ DB not found — copy little_navmap_navigraph.sqlite to flightLegDataArinc/\nFallback: direct path";
+                Console.WriteLine($"[PredictedPath] {callsign}: Navigraph DB not available — falling back to direct path");
+            }
+            else
+            {
+                noAirwayLog = $"Navigraph ✗ no airway matched (hdg {acHeading.Value:F0}°, {segsInfo} segs scanned)\nARINC: terminal area only (4 NL fixes, not applicable)\nFallback: direct path";
+                Console.WriteLine($"[PredictedPath] {callsign}: no airway found — falling back to direct path");
+            }
             return BuildDirectPath(ef, noAirwayLog);
         }
 

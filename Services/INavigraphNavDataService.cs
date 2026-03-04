@@ -33,6 +33,13 @@ public sealed record AirwayPathResult(
 public interface INavigraphNavDataService
 {
     /// <summary>
+    /// True when the Navigraph SQLite database file was found and contains
+    /// airway data. False when the file is missing — all airway lookups will
+    /// return null and flights will fall back to direct paths.
+    /// </summary>
+    bool IsAvailable { get; }
+
+    /// <summary>
     /// Resolves a fix identifier to coordinates.
     /// When multiple fixes share the same name, returns the one closest to
     /// the hint position (aircraft's current lat/lon).

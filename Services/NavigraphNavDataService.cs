@@ -14,9 +14,13 @@ using FlightTracker.Models;
 public sealed class NavigraphNavDataService : INavigraphNavDataService
 {
     private readonly string _dbPath;
+    private readonly bool _dbAvailable;
+
+    /// <inheritdoc/>
+    public bool IsAvailable => _dbAvailable;
 
     // How many degrees either side of aircraft heading we consider "aligned"
-    private const double HeadingToleranceDeg = 35.0;
+    private const double HeadingToleranceDeg = 45.0;
 
     // Bounding-box half-width used for candidate segment search (degrees)
     private const double SearchHalfDegLat = 0.7;   // ≈ 78 km
@@ -30,9 +34,29 @@ public sealed class NavigraphNavDataService : INavigraphNavDataService
     {
         _dbPath = dbPath;
         if (!File.Exists(dbPath))
-            Console.WriteLine($"[Navigraph] WARNING: database not found at {dbPath}");
+        {
+            _dbAvailable = false;
+            Console.WriteLine($"[Navigraph] ⚠️  Database NOT FOUND at {dbPath}");
+            Console.WriteLine($"[Navigraph]    All flights will use direct fallback paths.");
+            Console.WriteLine($"[Navigraph]    Copy the file:  scp little_navmap_navigraph.sqlite ec2-user@HOST:{dbPath}");
+        }
         else
-            Console.WriteLine($"[Navigraph] Database loaded: {dbPath}");
+        {
+            try
+            {
+                using var conn = OpenConnection();
+                using var cmd  = conn.CreateCommand();
+                cmd.CommandText = "SELECT count(*) FROM airway";
+                long count = (long)(cmd.ExecuteScalar() ?? 0L);
+                _dbAvailable = count > 0;
+                Console.WriteLine($"[Navigraph] Database ready: {count:N0} airway segments loaded from {dbPath}");
+            }
+            catch (Exception ex)
+            {
+                _dbAvailable = false;
+                Console.WriteLine($"[Navigraph] ⚠️  Database open failed: {ex.Message}");
+            }
+        }
     }
 
     // ── Fix resolution ────────────────────────────────────────────────────────
