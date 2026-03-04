@@ -29,6 +29,9 @@ public sealed class PredictedPathService : IPredictedPathService
         _navData = navData;
     }
 
+    public void InvalidateCache(string callsign) =>
+        _cache.TryRemove(callsign, out _);
+
     public Task<PredictedFlightPath?> GetPredictedPathAsync(
         EnrichedFlightState flight,
         CancellationToken cancellationToken)

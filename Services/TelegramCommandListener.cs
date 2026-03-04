@@ -20,6 +20,7 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
     private readonly IFlightLoggingService _loggingService;
     private readonly ITelegramNotificationService _notificationService;
     private readonly IAnthropicChatService _chatService;
+    private readonly IPredictedPathService _predictedPathService;
     private readonly HttpClient _httpClient;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -32,7 +33,8 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
         IFlightLoggingService loggingService,
         IHttpClientFactory httpClientFactory,
         ITelegramNotificationService notificationService,
-        IAnthropicChatService chatService)
+        IAnthropicChatService chatService,
+        IPredictedPathService predictedPathService)
     {
         _settings             = settings.Telegram;
         _homeLocation         = settings.HomeLocation;
@@ -40,6 +42,7 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
         _loggingService       = loggingService;
         _notificationService  = notificationService;
         _chatService          = chatService;
+        _predictedPathService = predictedPathService;
         _httpClient           = httpClientFactory.CreateClient("TelegramListener");
         _httpClient.Timeout   = TimeSpan.FromSeconds(40); // > long-poll timeout
     }
@@ -458,73 +461,75 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
     {
         try
         {
-            // Place the test plane at 60 % of the map's visible half-height north of home
-            // so it is always in frame regardless of the current zoom level.
-            int    effectiveZoom = _mapboxSettings.ZoomOverride ?? 10;
-            double halfKm        = Math.Max(2.5, 40.0 / Math.Pow(2.0, effectiveZoom - 10));
-            double testDistKm    = halfKm * 0.6;
-            double testLat       = _homeLocation.Latitude + testDistKm / 111.0;
-            double testLon       = _homeLocation.Longitude;
-            double distKm  = Haversine.DistanceKm(
+            // HV6992 — Transavia EHRD (Rotterdam) → LEBL (Barcelona)
+            // Aircraft placed at cruise altitude heading south, ~30 km south of EHRD.
+            const double testLat = 51.67;
+            const double testLon = 4.35;
+            double distKm = Haversine.DistanceKm(
                 testLat, testLon, _homeLocation.Latitude, _homeLocation.Longitude);
 
             var state = new FlightState
             {
-                Icao24                      = "aabbcc",
-                Callsign                    = "RYR4562",
+                Icao24                      = "484b4c",
+                Callsign                    = "HV6992",
                 OriginCountry               = "Netherlands",
                 Latitude                    = testLat,
                 Longitude                   = testLon,
-                BarometricAltitudeMeters    = 3500,
+                BarometricAltitudeMeters    = 11000,
                 OnGround                    = false,
-                VelocityMetersPerSecond     = 200,      // ≈ 720 km/h
-                HeadingDegrees              = 270,      // westbound (EHRD departure toward London)
-                VerticalRateMetersPerSecond = 8,
+                VelocityMetersPerSecond     = 230,     // ≈ 828 km/h
+                HeadingDegrees              = 190,     // southbound toward Spain
+                VerticalRateMetersPerSecond = 0,
                 DistanceKm                  = distKm,
                 AircraftDescription         = "Boeing 737-800",
-                WindDirectionDeg            = 090,
-                WindSpeedKnots              = 12,
-                OutsideAirTempC             = -18,
+                WindDirectionDeg            = 270,
+                WindSpeedKnots              = 30,
+                OutsideAirTempC             = -52,
             };
 
             var route = new FlightRoute(
                 OriginIcao: "EHRD", OriginIata: "RTM",
                 OriginName: "Rotterdam The Hague Airport",
-                OriginLat: 51.957, OriginLon: 4.442,
-                DestIcao:  "EGLL", DestIata:  "LHR",
-                DestName:  "London Heathrow Airport",
-                DestLat:   51.477, DestLon:  -0.461,
-                RouteDistanceKm: 310);
+                OriginLat:  51.957, OriginLon: 4.437,
+                DestIcao:   "LEBL", DestIata:  "BCN",
+                DestName:   "El Prat Airport (Barcelona)",
+                DestLat:    41.297, DestLon:   2.078,
+                RouteDistanceKm: 1199);
 
             var aircraft = new AircraftInfo(
                 TypeCode:     "B738",
-                Registration: "EI-TEST",
-                Operator:     "Ryanair",
+                Registration: "PH-HXI",
+                Operator:     "Transavia",
                 Category:     "Narrow-body Jet");
 
-            // Sample predicted path: EHRD departure westbound toward London Heathrow.
-            // Starts near the test plane and curves southwest across the North Sea.
-            var samplePath = new PredictedFlightPath(new List<(double Lat, double Lon)>
-            {
-                (testLat,  testLon),            // aircraft position
-                (51.98,    4.20),               // west of Rotterdam, descending to coast
-                (51.99,    3.95),               // Hoek van Holland area
-                (52.00,    3.55),               // North Sea coast
-                (51.95,    2.90),               // over North Sea
-                (51.82,    2.10),               // mid North Sea
-                (51.65,    1.40),               // approaching English coast
-                (51.55,    0.80),               // over Essex
-                (51.50,    0.20),               // outer London
-                (51.477,  -0.461),              // EGLL
-            });
+            // Build a preliminary EnrichedFlightState so the path service can access
+            // route + position — same pattern as FlightEnrichmentService.
+            var preliminary = new EnrichedFlightState(
+                State:         state,
+                Route:         route,
+                Aircraft:      aircraft,
+                PhotoUrl:      null,
+                AircraftFacts: null,
+                PredictedPath: null);
+
+            await SendMessageAsync(chatId, "⏳ Computing HV6992 path from Navigraph SQLite…", cancellationToken);
+
+            // Clear any cached result so each /test triggers a fresh SQLite computation.
+            _predictedPathService.InvalidateCache("HV6992");
+
+            // Run the real path computation (uses NavigraphNavDataService + SQLite)
+            // Clear any cached result first so each /test gets a fresh computation.
+            var predictedPath = await _predictedPathService.GetPredictedPathAsync(
+                preliminary, cancellationToken);
 
             var flight = new EnrichedFlightState(
                 State:         state,
                 Route:         route,
                 Aircraft:      aircraft,
-                PhotoUrl:      null,    // exercises the map-only send path
-                AircraftFacts: null,
-                PredictedPath: samplePath);
+                PhotoUrl:      null,
+                AircraftFacts: "Transavia 737 on the EHRD→LEBL (Rotterdam→Barcelona) route. " +
+                               "One of Transavia's busiest leisure routes, popular with Dutch holidaymakers heading to Catalonia.",
+                PredictedPath: predictedPath);
 
             double etaSeconds = distKm * 1000.0 / state.VelocityMetersPerSecond!.Value;
 
@@ -532,8 +537,14 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
                 flight, "Towards", etaSeconds, visitorInfo: null, cancellationToken,
                 _homeLocation.Latitude, _homeLocation.Longitude);
 
-            await SendMessageAsync(chatId, "✅ Test notification sent!", cancellationToken);
-            Console.WriteLine("[TelegramListener] /test command: synthetic notification sent.");
+            string pathSummary = predictedPath is null
+                ? "⚠️ Path unavailable (no route data)"
+                : predictedPath.IsDirect
+                    ? $"⚡ Direct path only (2 pts) — no airway matched"
+                    : $"✅ Airway path: {predictedPath.Points.Count} waypoints";
+
+            await SendMessageAsync(chatId, $"✅ HV6992 test notification sent!\n{pathSummary}", cancellationToken);
+            Console.WriteLine($"[TelegramListener] /test HV6992: {pathSummary}");
         }
         catch (Exception ex)
         {
