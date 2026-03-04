@@ -55,7 +55,8 @@ public sealed class TelegramNotificationService : ITelegramNotificationService
                 f.Latitude, f.Longitude, f.HeadingDegrees,
                 flight.InferredHeadingDegrees,
                 f.BarometricAltitudeMeters, cancellationToken,
-                trajectory);
+                trajectory,
+                flight.PredictedPath?.Points);
 
             string apiUrl;
             HttpContent requestContent;

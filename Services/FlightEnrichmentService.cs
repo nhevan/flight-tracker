@@ -8,17 +8,20 @@ public sealed class FlightEnrichmentService : IFlightEnrichmentService
     private readonly IAircraftInfoService _aircraftInfoService;
     private readonly IAircraftPhotoService _photoService;
     private readonly IAircraftFactsService _factsService;
+    private readonly IPredictedPathService _predictedPathService;
 
     public FlightEnrichmentService(
         IFlightRouteService routeService,
         IAircraftInfoService aircraftInfoService,
         IAircraftPhotoService photoService,
-        IAircraftFactsService factsService)
+        IAircraftFactsService factsService,
+        IPredictedPathService predictedPathService)
     {
-        _routeService        = routeService;
-        _aircraftInfoService = aircraftInfoService;
-        _photoService        = photoService;
-        _factsService        = factsService;
+        _routeService         = routeService;
+        _aircraftInfoService  = aircraftInfoService;
+        _photoService         = photoService;
+        _factsService         = factsService;
+        _predictedPathService = predictedPathService;
     }
 
     public async Task<IReadOnlyList<EnrichedFlightState>> EnrichAsync(
@@ -51,11 +54,19 @@ public sealed class FlightEnrichmentService : IFlightEnrichmentService
 
         await Task.WhenAll(photoTask, factsTask);
 
-        return new EnrichedFlightState(
+        // Build a preliminary EnrichedFlightState so PredictedPathService can access
+        // the route (origin/destination) when resolving the path.
+        var preliminary = new EnrichedFlightState(
             State:         flight,
             Route:         routeTask.Result,
             Aircraft:      aircraft,
             PhotoUrl:      photoTask.Result,
             AircraftFacts: factsTask.Result);
+
+        // Predicted path is independent of photo/facts — fetch in parallel with those above
+        // would be ideal, but it depends on the route result, so we fetch it now.
+        var predictedPath = await _predictedPathService.GetPredictedPathAsync(preliminary, cancellationToken);
+
+        return preliminary with { PredictedPath = predictedPath };
     }
 }

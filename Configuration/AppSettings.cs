@@ -8,6 +8,7 @@ public sealed class AppSettings
     public TelegramSettings Telegram { get; set; } = new();
     public AnthropicSettings Anthropic { get; set; } = new();
     public MapboxSettings Mapbox { get; set; } = new();
+    public FlightAwareSettings FlightAware { get; set; } = new();
 
     /// <summary>
     /// Path to the SQLite database file. Relative paths are resolved from the
@@ -94,6 +95,18 @@ public sealed class AnthropicSettings
 
     /// <summary>Maximum tokens in the AI response. 200 is plenty for 2-3 sentences of facts.</summary>
     public int MaxTokens { get; set; } = 200;
+}
+
+public sealed class FlightAwareSettings
+{
+    /// <summary>Set to true to enable filing route lookups via FlightAware AeroAPI.</summary>
+    public bool Enabled { get; set; } = false;
+
+    /// <summary>
+    /// AeroAPI key from flightaware.com/aeroapi.
+    /// Each call costs $0.005. The app calls once per unique callsign and caches the result.
+    /// </summary>
+    public string ApiKey { get; set; } = string.Empty;
 }
 
 public sealed class MapboxSettings

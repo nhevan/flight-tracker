@@ -60,6 +60,15 @@ setup_config() {
         read -r -s -p "  Access Token: " mapbox_token; echo ""
     fi
 
+    echo ""
+    echo "FlightAware AeroAPI — predicted flight path (optional, ~\$0.005/flight)"
+    read -r  -p "  Enable? [y/N]: " yn_fa
+    fa_enabled="false"; fa_key=""
+    if [[ "$yn_fa" =~ ^[Yy]$ ]]; then
+        fa_enabled="true"
+        read -r -s -p "  AeroAPI Key: " fa_key; echo ""
+    fi
+
     # Write JSON to a local temp file then SCP — avoids heredoc quoting issues
     # with secrets that may contain special shell characters.
     tmp=$(mktemp /tmp/flighttracker-XXXXXX.json)
@@ -93,6 +102,10 @@ setup_config() {
     "Enabled": $mapbox_enabled,
     "AccessToken": "$mapbox_token",
     "Style": "mapbox/dark-v11"
+  },
+  "FlightAware": {
+    "Enabled": $fa_enabled,
+    "ApiKey": "$fa_key"
   }
 }
 JSON

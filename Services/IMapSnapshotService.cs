@@ -19,5 +19,6 @@ public interface IMapSnapshotService
         double? inferredHeadingDegrees,
         double? altitudeMeters,
         CancellationToken cancellationToken,
-        IReadOnlyList<(double Lat, double Lon)>? trajectory = null);
+        IReadOnlyList<(double Lat, double Lon)>? trajectory = null,
+        IReadOnlyList<(double Lat, double Lon)>? predictedPath = null);
 }

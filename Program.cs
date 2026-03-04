@@ -38,6 +38,10 @@ services.AddSingleton<IAircraftPhotoService, PlaneSpottersPhotoService>();
 services.AddSingleton<IAircraftFactsService, AnthropicAircraftFactsService>();
 services.AddSingleton<IAnthropicChatService, AnthropicChatService>();
 services.AddSingleton<IMapSnapshotService, MapboxSnapshotService>();
+services.AddSingleton<IArinc424NavDataService>(_ =>
+    new Arinc424NavDataService(Path.Combine(AppContext.BaseDirectory, "flightLegDataArinc", "arinc_eh")));
+services.AddSingleton<IFlightAwareRouteService, FlightAwareRouteService>();
+services.AddSingleton<IPredictedPathService, PredictedPathService>();
 services.AddSingleton<IFlightEnrichmentService, FlightEnrichmentService>();
 services.AddSingleton<ITelegramNotificationService, TelegramNotificationService>();
 services.AddSingleton<IFlightLoggingService, SqliteFlightLoggingService>();

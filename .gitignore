@@ -13,5 +13,9 @@ appsettings.*.json
 *.user
 .vscode/
 
+# macOS
+.DS_Store
+**/.DS_Store
+
 # Claude
 .claude/

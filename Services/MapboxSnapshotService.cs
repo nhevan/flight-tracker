@@ -29,7 +29,8 @@ public sealed class MapboxSnapshotService : IMapSnapshotService
         double? inferredHeadingDegrees,
         double? altitudeMeters,
         CancellationToken cancellationToken,
-        IReadOnlyList<(double Lat, double Lon)>? trajectory = null)
+        IReadOnlyList<(double Lat, double Lon)>? trajectory = null,
+        IReadOnlyList<(double Lat, double Lon)>? predictedPath = null)
     {
         if (!_settings.Enabled || string.IsNullOrWhiteSpace(_settings.AccessToken))
             return null;
@@ -53,7 +54,7 @@ public sealed class MapboxSnapshotService : IMapSnapshotService
             int    zoom     = _settings.ZoomOverride ?? DistanceToZoom(distToHomeKm);
             double halfKm   = ZoomToHalfTrajectoryKm(zoom);
             string overlays = BuildOverlays(lat.Value, lon.Value, _home.Latitude, _home.Longitude,
-                                            effectiveHeading, halfKm, trajectory);
+                                            effectiveHeading, halfKm, trajectory, predictedPath);
             string style    = string.IsNullOrWhiteSpace(_settings.Style) ? "mapbox/dark-v11" : _settings.Style;
 
             // Map is centred on HOME so the user sees the flight path relative to their location
@@ -169,7 +170,8 @@ public sealed class MapboxSnapshotService : IMapSnapshotService
         double homeLat,  double homeLon,
         double? headingDegrees,
         double halfKm,
-        IReadOnlyList<(double Lat, double Lon)>? trajectory = null)
+        IReadOnlyList<(double Lat, double Lon)>? trajectory = null,
+        IReadOnlyList<(double Lat, double Lon)>? predictedPath = null)
     {
         var ic = System.Globalization.CultureInfo.InvariantCulture;
 
@@ -233,63 +235,91 @@ public sealed class MapboxSnapshotService : IMapSnapshotService
         // are written directly — no fragile string-replace post-processing needed.
         static JsonArray Coord(double lon, double lat) => new() { lon, lat };
 
-        var geoJson = new JsonObject
+        var features = new JsonArray
         {
-            ["type"] = "FeatureCollection",
-            ["features"] = new JsonArray
+            // Orange trajectory: two segments with a 1 km gap around the plane pin
+            new JsonObject
             {
-                // Orange trajectory: two segments with a 1 km gap around the plane pin
-                new JsonObject
+                ["type"] = "Feature",
+                ["properties"] = new JsonObject
                 {
-                    ["type"] = "Feature",
-                    ["properties"] = new JsonObject
-                    {
-                        ["stroke"]         = "#ffaa00",
-                        ["stroke-width"]   = 3,
-                        ["stroke-opacity"] = 0.9
-                    },
-                    ["geometry"] = new JsonObject
-                    {
-                        ["type"] = "MultiLineString",
-                        ["coordinates"] = new JsonArray
-                        {
-                            // behind: real accumulated trajectory if available,
-                            // otherwise synthetic backward projection along current heading
-                            BuildBackSegment(trajectory, planeLat, planeLon, cosLat, gapKm,
-                                             lonBwd, latBwd, lonGapBwd, latGapBwd),
-                            // ahead: 500 m after the plane → forward tip
-                            new JsonArray { Coord(lonGapFwd, latGapFwd), Coord(lonFwd, latFwd) }
-                        }
-                    }
+                    ["stroke"]         = "#ffaa00",
+                    ["stroke-width"]   = 3,
+                    ["stroke-opacity"] = 0.9
                 },
-                // Filled arrowhead triangle pointing in the direction of travel
-                new JsonObject
+                ["geometry"] = new JsonObject
                 {
-                    ["type"] = "Feature",
-                    ["properties"] = new JsonObject
+                    ["type"] = "MultiLineString",
+                    ["coordinates"] = new JsonArray
                     {
-                        ["fill"]           = "#ffaa00",
-                        ["fill-opacity"]   = 0.9,
-                        ["stroke"]         = "#ffaa00",
-                        ["stroke-width"]   = 1,
-                        ["stroke-opacity"] = 0.9
-                    },
-                    ["geometry"] = new JsonObject
+                        // behind: real accumulated trajectory if available,
+                        // otherwise synthetic backward projection along current heading
+                        BuildBackSegment(trajectory, planeLat, planeLon, cosLat, gapKm,
+                                         lonBwd, latBwd, lonGapBwd, latGapBwd),
+                        // ahead: 500 m after the plane → forward tip
+                        new JsonArray { Coord(lonGapFwd, latGapFwd), Coord(lonFwd, latFwd) }
+                    }
+                }
+            },
+            // Filled arrowhead triangle pointing in the direction of travel
+            new JsonObject
+            {
+                ["type"] = "Feature",
+                ["properties"] = new JsonObject
+                {
+                    ["fill"]           = "#ffaa00",
+                    ["fill-opacity"]   = 0.9,
+                    ["stroke"]         = "#ffaa00",
+                    ["stroke-width"]   = 1,
+                    ["stroke-opacity"] = 0.9
+                },
+                ["geometry"] = new JsonObject
+                {
+                    ["type"] = "Polygon",
+                    ["coordinates"] = new JsonArray
                     {
-                        ["type"] = "Polygon",
-                        ["coordinates"] = new JsonArray
+                        new JsonArray   // outer ring
                         {
-                            new JsonArray   // outer ring
-                            {
-                                Coord(lonTip,   latTip),    // tip (half-depth ahead of plane)
-                                Coord(lonRight, latRight),  // right base corner
-                                Coord(lonLeft,  latLeft),   // left base corner
-                                Coord(lonTip,   latTip)     // close ring
-                            }
+                            Coord(lonTip,   latTip),    // tip (half-depth ahead of plane)
+                            Coord(lonRight, latRight),  // right base corner
+                            Coord(lonLeft,  latLeft),   // left base corner
+                            Coord(lonTip,   latTip)     // close ring
                         }
                     }
                 }
             }
+        };
+
+        // Blue predicted path: drawn under/alongside the orange history line.
+        // Downsample to ≤150 points so the encoded GeoJSON stays within Mapbox URL limits.
+        if (predictedPath is { Count: >= 2 })
+        {
+            var sampled = DownsamplePath(predictedPath, maxPoints: 150);
+            var coords  = new JsonArray();
+            foreach (var (lat, lon) in sampled)
+                coords.Add(Coord(lon, lat));
+
+            features.Add(new JsonObject
+            {
+                ["type"] = "Feature",
+                ["properties"] = new JsonObject
+                {
+                    ["stroke"]         = "#4488ff",
+                    ["stroke-width"]   = 2,
+                    ["stroke-opacity"] = 0.85
+                },
+                ["geometry"] = new JsonObject
+                {
+                    ["type"]        = "LineString",
+                    ["coordinates"] = coords
+                }
+            });
+        }
+
+        var geoJson = new JsonObject
+        {
+            ["type"]     = "FeatureCollection",
+            ["features"] = features
         };
 
         string geoJsonStr = geoJson.ToJsonString();
@@ -298,5 +328,25 @@ public sealed class MapboxSnapshotService : IMapSnapshotService
         string encodedGeoJson = Uri.EscapeDataString(geoJsonStr);
 
         return $"{planeMarker},{homeMarker},geojson({encodedGeoJson})";
+    }
+
+    /// <summary>
+    /// Returns a uniformly-strided subset of the path capped at <paramref name="maxPoints"/>.
+    /// Always includes the first and last point so the path endpoints are preserved.
+    /// </summary>
+    private static IReadOnlyList<(double Lat, double Lon)> DownsamplePath(
+        IReadOnlyList<(double Lat, double Lon)> path, int maxPoints)
+    {
+        if (path.Count <= maxPoints)
+            return path;
+
+        var result = new List<(double, double)>(maxPoints);
+        double stride = (double)(path.Count - 1) / (maxPoints - 1);
+        for (int i = 0; i < maxPoints; i++)
+        {
+            int idx = Math.Min((int)Math.Round(i * stride), path.Count - 1);
+            result.Add(path[idx]);
+        }
+        return result;
     }
 }

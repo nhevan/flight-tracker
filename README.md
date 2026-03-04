@@ -9,6 +9,7 @@ a low-altitude aircraft is approaching overhead.
 - **Live terminal table** — all flights within your configured range, updated every poll
 - **Rich ADS-B data** — distance, altitude, speed, heading, climb rate, squawk, emergency status
 - **Route information** — origin and destination airport names with live ETA to destination
+- **Predicted flight path** — blue route overlay on the map showing the full planned path ahead of the aircraft, with proper fly-by turn arcs at each waypoint (requires FlightAware AeroAPI key; computed from the filed route string resolved against local open-flightmaps ARINC 424 navdata)
 - **Audible alert** — bell when a new flight enters the area
 - **Telegram notifications** when a flight is ≤ 2 minutes from overhead and below your altitude threshold:
   - 🔁 Repeat visitor detection — "Welcome back! PH-BHO was last seen 3 days ago"
@@ -33,6 +34,7 @@ a low-altitude aircraft is approaching overhead.
 - (Optional) A Telegram bot token and chat ID for notifications
 - (Optional) An [Anthropic API key](https://console.anthropic.com) for AI-generated aircraft facts and smart bot replies
 - (Optional) A [Mapbox access token](https://account.mapbox.com) for live map images
+- (Optional) A [FlightAware AeroAPI key](https://flightaware.com/aeroapi/) for predicted flight path overlay (~$0.005/flight)
 
 No flight-data API credentials are required. Flight data comes from
 [airplanes.live](https://airplanes.live), a free real-time ADS-B aggregator.
@@ -90,6 +92,10 @@ All settings live in `appsettings.json` (gitignored — never committed).
     "Style": "mapbox/dark-v11",
     "ZoomOverride": null,
     "BearingOverride": null
+  },
+  "FlightAware": {
+    "Enabled": false,
+    "ApiKey": "YOUR_FLIGHTAWARE_AEROAPI_KEY"
   }
 }
 ```
@@ -162,6 +168,32 @@ When enabled, each notification includes a static map centred on your home, show
 aircraft's position (red pin), your home (blue pin), and the heading trajectory (orange
 line with direction arrow). On course-change re-notifications the full accumulated GPS
 track is drawn as the trajectory polyline.
+
+When FlightAware is also enabled, a **blue predicted path** is overlaid on the map showing
+the planned route ahead of the aircraft with proper fly-by turn arcs.
+
+### FlightAware (Predicted Flight Path)
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `Enabled` | `false` | Set to `true` to enable predicted flight path computation |
+| `ApiKey` | — | AeroAPI key from [flightaware.com/aeroapi](https://flightaware.com/aeroapi/) |
+
+When enabled:
+- The filed route string is fetched from `GET /flights/{callsign}` (one call per unique callsign, ~$0.005 each).
+- The route tokens (SID, airway names, explicit fixes, STAR) are resolved against the local open-flightmaps ARINC 424 navdata file (`flightLegDataArinc/arinc_eh/`).
+- Fly-by turn arcs are computed at each waypoint using the standard FMS formula: `R = TAS² / (g × tan 25°)`.
+- The resulting path is rendered as a blue `LineString` on the Mapbox map.
+
+**ARINC 424 data limitations:** The current open-flightmaps dataset (`arinc_eh.pc`) is an
+airspace-boundary subset. It contains VOR/NDB navaids (~112), terminal area fixes (~511),
+and airport/runway data, but **does not include SID/STAR procedure sequences or airway
+intermediate fixes**. Those segments are drawn as straight lines. To get full SID/STAR
+curved geometry, replace the `.pc` files with the open-flightmaps full navigation database
+export when it becomes available for your AIRAC cycle.
+
+The ARINC data is loaded once at startup. After each 28-day AIRAC cycle update, restart
+the application to pick up the new data.
 
 Zoom level is selected automatically based on the plane's distance from home:
 
@@ -301,6 +333,8 @@ The database accumulates indefinitely and is never deleted automatically. Inspec
 | [planespotters.net](https://www.planespotters.net) | Aircraft photos | None |
 | [Anthropic API](https://www.anthropic.com) | AI aircraft facts + smart bot replies (optional) | API key |
 | [Mapbox](https://www.mapbox.com) | Static map images (optional) | Access token |
+| [FlightAware AeroAPI](https://flightaware.com/aeroapi/) | Filed route string for predicted path (optional, ~$0.005/flight) | API key |
+| [open-flightmaps](https://www.open-flightmaps.org) | Local ARINC 424 navdata for fix resolution (bundled in repo) | None |
 
 ## Deploying to EC2
 
@@ -378,15 +412,21 @@ flightTracker/
 ├── Configuration/AppSettings.cs           # Configuration schema
 ├── Models/                                # Data models
 │   ├── FlightState.cs                     # Raw ADS-B state + Haversine helper
-│   ├── EnrichedFlightState.cs             # Flight + route + aircraft + photo + facts
+│   ├── EnrichedFlightState.cs             # Flight + route + aircraft + photo + facts + predicted path
 │   ├── AircraftInfo.cs                    # Type code, registration, operator
 │   ├── FlightRoute.cs                     # Origin/destination airports + coordinates
+│   ├── NavFix.cs                          # Navigational fix (name, lat, lon, type)
+│   ├── FiledRoute.cs                      # Filed route string from FlightAware
+│   ├── PredictedFlightPath.cs             # Ordered lat/lon coordinates of the predicted ahead-path
 │   ├── RepeatVisitorInfo.cs               # Prior sighting count + last-seen details
 │   └── FlightStats.cs                     # Aggregated stats for /stats command
 ├── Services/
 │   ├── AirplanesLiveService.cs            # ADS-B flight data (airplanes.live)
-│   ├── FlightEnrichmentService.cs         # Combines route, aircraft, photo, AI facts
+│   ├── FlightEnrichmentService.cs         # Combines route, aircraft, photo, AI facts, predicted path
 │   ├── FlightRouteService.cs              # Origin/destination lookup (adsbdb.com)
+│   ├── FlightAwareRouteService.cs         # Filed route string (FlightAware AeroAPI)
+│   ├── Arinc424NavDataService.cs          # ARINC 424 navdata parser (fix name → lat/lon)
+│   ├── PredictedPathService.cs            # Route string → smoothed lat/lon path with fly-by arcs
 │   ├── HexDbService.cs                    # Aircraft metadata (hexdb.io)
 │   ├── PlaneSpottersPhotoService.cs       # Aircraft photos (planespotters.net)
 │   ├── AnthropicAircraftFactsService.cs   # AI facts in first-person voice (Claude)
@@ -398,8 +438,14 @@ flightTracker/
 ├── Data/
 │   ├── IFlightLoggingService.cs           # Logging + stats + spot query interface
 │   └── SqliteFlightLoggingService.cs      # SQLite implementation
-├── Helpers/FlightDirectionHelper.cs       # Geospatial math (direction, ETA, Haversine)
+├── Helpers/
+│   ├── FlightDirectionHelper.cs           # Geospatial math (direction, ETA, Haversine)
+│   └── FlyByArcHelper.cs                  # Fly-by turn arc geometry (R=TAS²/g·tan25°, arc sampling)
 ├── Display/FlightTableRenderer.cs         # Terminal table (Spectre.Console)
+├── flightLegDataArinc/
+│   └── arinc_eh/                          # open-flightmaps ARINC 424 navdata (EH region)
+│       ├── embedded/arinc_eh.pc           # Full European fixes + navaids (~83K records)
+│       └── isolated/arinc_eh.pc           # EH-region-only subset (~16K records)
 ├── appsettings.example.json               # Config template (copy to appsettings.json)
 ├── ec2-setup.sh                           # One-time EC2 setup (run on EC2)
 ├── redeploy.sh                            # Pull + restart while SSHed into EC2
