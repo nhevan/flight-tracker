@@ -40,7 +40,8 @@ services.AddSingleton<IAnthropicChatService, AnthropicChatService>();
 services.AddSingleton<IMapSnapshotService, MapboxSnapshotService>();
 services.AddSingleton<IArinc424NavDataService>(_ =>
     new Arinc424NavDataService(Path.Combine(AppContext.BaseDirectory, "flightLegDataArinc", "arinc_eh")));
-services.AddSingleton<IFlightAwareRouteService, FlightAwareRouteService>();
+services.AddSingleton<INavigraphNavDataService>(_ =>
+    new NavigraphNavDataService(Path.Combine(AppContext.BaseDirectory, "flightLegDataArinc", "little_navmap_navigraph.sqlite")));
 services.AddSingleton<IPredictedPathService, PredictedPathService>();
 services.AddSingleton<IFlightEnrichmentService, FlightEnrichmentService>();
 services.AddSingleton<ITelegramNotificationService, TelegramNotificationService>();
