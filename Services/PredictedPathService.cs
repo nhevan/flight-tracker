@@ -61,7 +61,7 @@ public sealed class PredictedPathService : IPredictedPathService
 
         double? acLat     = ef.State.Latitude;
         double? acLon     = ef.State.Longitude;
-        double? acHeading = ef.State.TrueTrack;
+        double? acHeading = ef.State.Track;
         double? destLat   = ef.Route?.DestLat;
         double? destLon   = ef.Route?.DestLon;
 

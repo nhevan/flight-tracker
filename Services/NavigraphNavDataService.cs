@@ -90,10 +90,10 @@ public sealed class NavigraphNavDataService : INavigraphNavDataService
             if (candidate is null) return null;
 
             var waypoints = FollowAirway(
-                candidate.Value.AirwayName,
-                candidate.Value.FragmentNo,
-                candidate.Value.SequenceNo,
-                candidate.Value.ForwardDirection,
+                candidate.AirwayName,
+                candidate.FragmentNo,
+                candidate.SequenceNo,
+                candidate.ForwardDirection,
                 destLat, destLon);
 
             if (waypoints.Count < 2) return null;
@@ -106,7 +106,7 @@ public sealed class NavigraphNavDataService : INavigraphNavDataService
                 path.Add((destLat, destLon));
 
             Console.WriteLine(
-                $"[Navigraph] Airway snapped to {candidate.Value.AirwayName}: " +
+                $"[Navigraph] Airway snapped to {candidate.AirwayName}: " +
                 $"{path.Count} points toward ({destLat:F2},{destLon:F2})");
 
             return path;
