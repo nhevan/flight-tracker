@@ -64,6 +64,7 @@ public sealed class PredictedPathService : IPredictedPathService
             FiledRoute? filed = await _faService.GetFiledRouteAsync(callsign, cancellationToken);
             if (filed is null)
             {
+                Console.WriteLine($"[PredictedPath] {callsign}: no filed route from FlightAware — path unavailable");
                 _cache[callsign] = null;
                 return null;
             }
@@ -131,7 +132,10 @@ public sealed class PredictedPathService : IPredictedPathService
             points = TrimToAhead(points, ef.State.Latitude.Value, ef.State.Longitude.Value);
 
         if (points.Count < 2)
+        {
+            Console.WriteLine($"[PredictedPath] {filed.Callsign}: path trimmed to {points.Count} point(s) — too short");
             return null;
+        }
 
         Console.WriteLine($"[PredictedPath] {filed.Callsign}: {points.Count} path points from {fixes.Count} fixes.");
         return new PredictedFlightPath(points.AsReadOnly());

@@ -79,6 +79,7 @@ public sealed class FlightAwareRouteService : IFlightAwareRouteService
             string? route = dto?.Flights?.FirstOrDefault()?.Route;
             if (string.IsNullOrWhiteSpace(route))
             {
+                Console.WriteLine($"[FlightAware] {callsign}: no route string in response");
                 _cache[callsign] = null;
                 return null;
             }
