@@ -310,7 +310,12 @@ public sealed class TelegramNotificationService : ITelegramNotificationService
         if (ef.Route is not null)
         {
             if (ef.PredictedPath is not null)
-                sb.AppendLine($"🔵 Route: {ef.PredictedPath.Points.Count} waypoints");
+            {
+                string pathLabel = ef.PredictedPath.IsDirect
+                    ? "direct (no route data)"
+                    : $"{ef.PredictedPath.Points.Count} waypoints";
+                sb.AppendLine($"🔵 Route: {pathLabel}");
+            }
             else
                 sb.AppendLine("⚪ Route: path unavailable");
         }

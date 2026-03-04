@@ -65,8 +65,9 @@ public sealed class PredictedPathService : IPredictedPathService
             if (filed is null)
             {
                 Console.WriteLine($"[PredictedPath] {callsign}: no filed route from FlightAware — path unavailable");
-                _cache[callsign] = null;
-                return null;
+                var direct = BuildDirectPath(flight);
+                _cache[callsign] = direct;
+                return direct;
             }
 
             var path = BuildPath(filed, flight);
@@ -81,6 +82,41 @@ public sealed class PredictedPathService : IPredictedPathService
     }
 
     // ── Path building ─────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Builds a straight great-circle path (origin → dest) when no filed route is available.
+    /// Returns null if origin or destination coordinates are missing from the route.
+    /// </summary>
+    private PredictedFlightPath? BuildDirectPath(EnrichedFlightState ef)
+    {
+        string callsign = ef.State.Callsign;
+
+        if (ef.Route?.OriginLat is null || ef.Route.OriginLon is null ||
+            ef.Route.DestLat   is null || ef.Route.DestLon   is null)
+        {
+            Console.WriteLine($"[PredictedPath] {callsign}: no origin/dest coords — direct path unavailable");
+            return null;
+        }
+
+        var points = new List<(double Lat, double Lon)>
+        {
+            (ef.Route.OriginLat.Value, ef.Route.OriginLon.Value),
+            (ef.Route.DestLat.Value,   ef.Route.DestLon.Value),
+        };
+
+        // Trim to the portion ahead of the aircraft
+        if (ef.State.Latitude.HasValue && ef.State.Longitude.HasValue)
+            points = TrimToAhead(points, ef.State.Latitude.Value, ef.State.Longitude.Value);
+
+        if (points.Count < 2)
+        {
+            Console.WriteLine($"[PredictedPath] {callsign}: direct path trimmed to {points.Count} point(s) — too short");
+            return null;
+        }
+
+        Console.WriteLine($"[PredictedPath] {callsign}: no filed route — using direct path (origin → dest)");
+        return new PredictedFlightPath(points.AsReadOnly(), IsDirect: true);
+    }
 
     private PredictedFlightPath? BuildPath(FiledRoute filed, EnrichedFlightState ef)
     {
