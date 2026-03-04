@@ -12,7 +12,7 @@ using FlightTracker.Models;
 ///      near the aircraft and follow its ordered waypoints toward the destination
 ///      (via <see cref="INavigraphNavDataService.GetAirwayPath"/>).
 ///   2. Fall back to a direct great-circle line (origin → dest) when no airway
-///      is found or the aircraft is within ~150 km of the destination.
+///      is found or the aircraft is within ~80 km of the destination.
 ///   3. Trim the result so the blue line starts at the aircraft's current position.
 ///   4. Cache the result per callsign for the session lifetime.
 /// </summary>
@@ -79,10 +79,10 @@ public sealed class PredictedPathService : IPredictedPathService
         if (_navData.IsAvailable)
         {
             // Skip airway search when near destination (same threshold as NavigraphNavDataService)
-            if (distToDestKm < 150.0)
+            if (distToDestKm < 80.0)
             {
                 string nearDestLog = $"Navigraph: on approach ({distToDestKm:F0} km to dest) — direct path";
-                Console.WriteLine($"[PredictedPath] {callsign}: within 150km of dest ({distToDestKm:F0}km) — direct path");
+                Console.WriteLine($"[PredictedPath] {callsign}: within 80km of dest ({distToDestKm:F0}km) — direct path");
                 return BuildDirectPath(ef, nearDestLog);
             }
 

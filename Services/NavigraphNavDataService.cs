@@ -28,10 +28,6 @@ public sealed class NavigraphNavDataService : INavigraphNavDataService
     private const double SearchHalfDegLat = 2.5;   // ≈ 278 km
     private const double SearchHalfDegLon = 3.5;   // ≈ 245 km at 52°N
 
-    // Once the aircraft is within this distance of the destination, stop
-    // following airways and draw direct.
-    private const double StarCutoffKm = 150.0;
-
     public NavigraphNavDataService(string dbPath)
     {
         _dbPath = dbPath;
@@ -121,12 +117,6 @@ public sealed class NavigraphNavDataService : INavigraphNavDataService
                 $"[Navigraph] GetAirwayPath: pos=({acLat:F3},{acLon:F3}) bearingToDest={bearingToDest:F0}° " +
                 $"dest=({destLat:F3},{destLon:F3}) dist={totalDist:F0}km");
 
-            if (totalDist < StarCutoffKm)
-            {
-                Console.WriteLine($"[Navigraph] Already within {StarCutoffKm}km of dest — skipping");
-                return null;
-            }
-
             var allPoints       = new List<(double Lat, double Lon)>();
             var airwaysUsed     = new List<string>();
             var usedAirwayKeys  = new HashSet<(string Name, int Frag)>();
@@ -137,9 +127,6 @@ public sealed class NavigraphNavDataService : INavigraphNavDataService
 
             for (int chain = 0; chain < MaxAirwayChain; chain++)
             {
-                if (Haversine.DistanceKm(curLat, curLon, destLat, destLon) < StarCutoffKm)
-                    break;
-
                 // Recompute bearing from current chain position toward destination each iteration
                 double curBearing = FlyByArcHelper.BearingDeg(curLat, curLon, destLat, destLon);
                 var (candidate, segsScanned) = FindBestSegment(curLat, curLon, curBearing, destLat, destLon);
@@ -332,9 +319,8 @@ public sealed class NavigraphNavDataService : INavigraphNavDataService
 
             double dist = Haversine.DistanceKm(lat, lon, destLat, destLon);
 
-            // Stop if we've passed the destination or the airway diverges significantly
-            if (dist < StarCutoffKm) break;           // close enough — go direct from here
-            if (dist > prevDist + 50.0) break;        // airway moving away from dest
+            // Stop if the airway diverges significantly from the destination
+            if (dist > prevDist + 50.0) break;
 
             result.Add((lat, lon));
             prevDist = dist;
