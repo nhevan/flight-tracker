@@ -9,7 +9,7 @@ a low-altitude aircraft is approaching overhead.
 - **Live terminal table** — all flights within your configured range, updated every poll
 - **Rich ADS-B data** — distance, altitude, speed, heading, climb rate, squawk, emergency status
 - **Route information** — origin and destination airport names with live ETA to destination
-- **Predicted flight path** — blue route overlay on the map showing the full planned path ahead of the aircraft, with proper fly-by turn arcs at each waypoint (requires FlightAware AeroAPI key; computed from the filed route string resolved against local open-flightmaps ARINC 424 navdata)
+- **Predicted flight path** — blue route overlay on the map, inferred entirely offline from the [Navigraph / Little NavMap SQLite database](https://littlenavmap.org) by snapping the aircraft's current position and heading to the nearest matching airway and chaining up to 8 consecutive airways toward the destination
 - **Audible alert** — bell when a new flight enters the area
 - **Telegram notifications** when a flight is ≤ 2 minutes from overhead and below your altitude threshold:
   - 🔁 Repeat visitor detection — "Welcome back! PH-BHO was last seen 3 days ago"
@@ -20,7 +20,7 @@ a low-altitude aircraft is approaching overhead.
   - AI-generated facts in the plane's own voice (via Anthropic Claude) — omitted on course-change re-notifications
   - Wind speed/direction and outside air temperature when broadcast by the aircraft
   - Tappable callsign link that opens FlightRadar24 centred on your spot (zoom 11)
-- **Telegram bot commands** — manage spots, adjust range and altitude filter, control map zoom, query stats, and send test notifications
+- **Telegram bot commands** — manage spots, adjust range and altitude filter, control map zoom, query stats, send test notifications, and plot any live flight on demand with `/plot <callsign>`
 - **Smart fallback replies** — unknown messages are forwarded to Claude for a helpful plain-text response
 - **Flight statistics** via `/stats` — total sightings, busiest hours, streaks, gaps
 - **Named spot management** — save and switch between multiple named spotting locations
@@ -34,7 +34,7 @@ a low-altitude aircraft is approaching overhead.
 - (Optional) A Telegram bot token and chat ID for notifications
 - (Optional) An [Anthropic API key](https://console.anthropic.com) for AI-generated aircraft facts and smart bot replies
 - (Optional) A [Mapbox access token](https://account.mapbox.com) for live map images
-- (Optional) A [FlightAware AeroAPI key](https://flightaware.com/aeroapi/) for predicted flight path overlay (~$0.005/flight)
+- (Optional) A [Navigraph / Little NavMap SQLite database](https://littlenavmap.org) (`little_navmap_navigraph.sqlite`) for predicted airway path overlay — place at `flightLegDataArinc/little_navmap_navigraph.sqlite`
 
 No flight-data API credentials are required. Flight data comes from
 [airplanes.live](https://airplanes.live), a free real-time ADS-B aggregator.
@@ -92,10 +92,6 @@ All settings live in `appsettings.json` (gitignored — never committed).
     "Style": "mapbox/dark-v11",
     "ZoomOverride": null,
     "BearingOverride": null
-  },
-  "FlightAware": {
-    "Enabled": false,
-    "ApiKey": "YOUR_FLIGHTAWARE_AEROAPI_KEY"
   }
 }
 ```
@@ -169,31 +165,39 @@ aircraft's position (red pin), your home (blue pin), and the heading trajectory 
 line with direction arrow). On course-change re-notifications the full accumulated GPS
 track is drawn as the trajectory polyline.
 
-When FlightAware is also enabled, a **blue predicted path** is overlaid on the map showing
-the planned route ahead of the aircraft with proper fly-by turn arcs.
+When the Navigraph database is present, a **blue predicted path** is overlaid on the map
+showing the inferred route ahead of the aircraft across chained airways toward the destination.
 
-### FlightAware (Predicted Flight Path)
+### Navigraph / Little NavMap SQLite (Predicted Flight Path)
 
-| Field | Default | Description |
-|-------|---------|-------------|
-| `Enabled` | `false` | Set to `true` to enable predicted flight path computation |
-| `ApiKey` | — | AeroAPI key from [flightaware.com/aeroapi](https://flightaware.com/aeroapi/) |
+The predicted path is computed entirely offline — no external API calls, no API key required.
 
-When enabled:
-- The filed route string is fetched from `GET /flights/{callsign}` (one call per unique callsign, ~$0.005 each).
-- The route tokens (SID, airway names, explicit fixes, STAR) are resolved against the local open-flightmaps ARINC 424 navdata file (`flightLegDataArinc/arinc_eh/`).
-- Fly-by turn arcs are computed at each waypoint using the standard FMS formula: `R = TAS² / (g × tan 25°)`.
-- The resulting path is rendered as a blue `LineString` on the Mapbox map.
+Place the `little_navmap_navigraph.sqlite` file (from [Little NavMap](https://littlenavmap.org)
+or a [Navigraph](https://navigraph.com) export) at:
 
-**ARINC 424 data limitations:** The current open-flightmaps dataset (`arinc_eh.pc`) is an
-airspace-boundary subset. It contains VOR/NDB navaids (~112), terminal area fixes (~511),
-and airport/runway data, but **does not include SID/STAR procedure sequences or airway
-intermediate fixes**. Those segments are drawn as straight lines. To get full SID/STAR
-curved geometry, replace the `.pc` files with the open-flightmaps full navigation database
-export when it becomes available for your AIRAC cycle.
+```
+flightLegDataArinc/little_navmap_navigraph.sqlite
+```
 
-The ARINC data is loaded once at startup. After each 28-day AIRAC cycle update, restart
-the application to pick up the new data.
+> **Note:** This file is ~134 MB and is not included in the repository. It must be copied
+> manually to the EC2 instance at `/opt/flighttracker/app/flightLegDataArinc/little_navmap_navigraph.sqlite`.
+
+When the file is present, each notification includes:
+
+- **Airway snapping** — the aircraft's position and heading are matched to the nearest
+  heading-aligned airway segment in the `airway` table (86 000+ worldwide segments).
+- **Multi-airway chaining** — after each airway ends, the algorithm finds the next
+  aligned airway from the last waypoint and chains up to 8 consecutive airways toward
+  the destination. A typical 1 000 km route produces 25–30 waypoints.
+- **Fallback** — when no matching airway is found (e.g. oceanic track, unpublished route),
+  a direct great-circle line from origin to destination is used instead.
+- **Nav Data log** in the notification — shows the full chain, e.g.
+  `UY131 → Z319 → UL194 → UN860 · 29 wpts (312 segs scanned)`.
+
+**ARINC 424 data note:** The bundled `flightLegDataArinc/arinc_eh/` file is an
+open-flightmaps airspace-boundary dataset for the EH (Netherlands) region. It contains
+only 4 named enroute waypoints and ~40 terminal-area fixes — not IFR airways. It is not
+used for predicted path computation; only the Navigraph SQLite database is.
 
 Zoom level is selected automatically based on the plane's distance from home:
 
@@ -222,6 +226,7 @@ zoom - Set map zoom level (1-22) or auto
 alt - Set max altitude filter in metres
 rotate - Set map bearing in degrees (0-359) or reset
 test - Send a test flight notification
+plot - Plot a live flight by callsign (e.g. HV6992)
 ```
 
 ### Command reference
@@ -241,6 +246,7 @@ test - Send a test flight notification
 | `/rotate reset` | Revert to the default bearing (350° — 10° anti-clockwise) |
 | `/rotate` | Show the current bearing |
 | `/test` | Send a synthetic notification through the full pipeline to verify everything is wired up correctly |
+| `/plot <callsign>` | Look up a flight live, compute its predicted airway path, and send you the full notification with map (e.g. `/plot HV6992`) |
 
 Any other text is forwarded to Claude (when Anthropic is enabled), which replies helpfully in plain text.
 
@@ -256,6 +262,11 @@ London Heathrow (LHR) → Amsterdam Schiphol (AMS) · arriving in ~1h 23m
 Boeing 787-9 · B789 / PH-BHO · KLM Royal Dutch Airlines
 Alt: 2,450 m → FL350 | Speed: 895 km/h | 45.2 km | ETA: 4m 20s
 Wind: 270° 45 kts | OAT: -52°C
+🔵 Route: UY131 → Z319 → UL194 · 22 waypoints
+
+📋 Nav Data
+  Navigraph ✓ UY131 → Z319 → UL194 · 22 wpts (298 segs scanned)
+  ARINC: terminal area only (4 NL fixes, not applicable)
 
 ✈️ I'm a Boeing 787-9, registration PH-BHO…
 ```
@@ -270,6 +281,8 @@ Wind: 270° 45 kts | OAT: -52°C
 | Aircraft | Description · type code / registration · operator |
 | Stats | Altitude (+ autopilot target `→ FLxxx` when set), speed, distance from home, ETA |
 | Wind / temp | Wind direction + speed and outside air temperature (when broadcast by aircraft) |
+| Route status | 🔵 with airway chain + waypoint count, or ⚪ when unavailable |
+| Nav Data | Airway chain used (e.g. `UY131 → Z319 → UN860`), waypoints, segments scanned, and ARINC status |
 | AI facts | 2–3 sentences from the aircraft's perspective (requires Anthropic; omitted on course-change re-notifications) |
 
 The callsign in the header is a deep link (`http://fr24.com/<lat>,<lon>/11`) that opens
@@ -333,8 +346,7 @@ The database accumulates indefinitely and is never deleted automatically. Inspec
 | [planespotters.net](https://www.planespotters.net) | Aircraft photos | None |
 | [Anthropic API](https://www.anthropic.com) | AI aircraft facts + smart bot replies (optional) | API key |
 | [Mapbox](https://www.mapbox.com) | Static map images (optional) | Access token |
-| [FlightAware AeroAPI](https://flightaware.com/aeroapi/) | Filed route string for predicted path (optional, ~$0.005/flight) | API key |
-| [open-flightmaps](https://www.open-flightmaps.org) | Local ARINC 424 navdata for fix resolution (bundled in repo) | None |
+| Navigraph / Little NavMap SQLite | Airway segments for predicted path overlay (optional, ~134 MB file) | None (file on disk) |
 
 ## Deploying to EC2
 
@@ -416,17 +428,16 @@ flightTracker/
 │   ├── AircraftInfo.cs                    # Type code, registration, operator
 │   ├── FlightRoute.cs                     # Origin/destination airports + coordinates
 │   ├── NavFix.cs                          # Navigational fix (name, lat, lon, type)
-│   ├── FiledRoute.cs                      # Filed route string from FlightAware
 │   ├── PredictedFlightPath.cs             # Ordered lat/lon coordinates of the predicted ahead-path
 │   ├── RepeatVisitorInfo.cs               # Prior sighting count + last-seen details
 │   └── FlightStats.cs                     # Aggregated stats for /stats command
 ├── Services/
-│   ├── AirplanesLiveService.cs            # ADS-B flight data (airplanes.live)
+│   ├── AirplanesLiveService.cs            # ADS-B flight data (airplanes.live); includes callsign lookup
 │   ├── FlightEnrichmentService.cs         # Combines route, aircraft, photo, AI facts, predicted path
 │   ├── FlightRouteService.cs              # Origin/destination lookup (adsbdb.com)
-│   ├── FlightAwareRouteService.cs         # Filed route string (FlightAware AeroAPI)
-│   ├── Arinc424NavDataService.cs          # ARINC 424 navdata parser (fix name → lat/lon)
-│   ├── PredictedPathService.cs            # Route string → smoothed lat/lon path with fly-by arcs
+│   ├── NavigraphNavDataService.cs         # Airway snapping + multi-chain path inference (Navigraph SQLite)
+│   ├── Arinc424NavDataService.cs          # ARINC 424 navdata parser (terminal-area fix resolution)
+│   ├── PredictedPathService.cs            # Airway-chained path builder with direct fallback
 │   ├── HexDbService.cs                    # Aircraft metadata (hexdb.io)
 │   ├── PlaneSpottersPhotoService.cs       # Aircraft photos (planespotters.net)
 │   ├── AnthropicAircraftFactsService.cs   # AI facts in first-person voice (Claude)
@@ -434,7 +445,7 @@ flightTracker/
 │   ├── MapboxSnapshotService.cs           # Live map images (Mapbox Static API)
 │   ├── RepeatVisitorService.cs            # Recurring aircraft detection (SQLite)
 │   ├── TelegramNotificationService.cs     # Builds and sends Telegram flight alerts
-│   └── TelegramCommandListener.cs         # Bot command handler (long-polling)
+│   └── TelegramCommandListener.cs         # Bot command handler (long-polling; /plot + others)
 ├── Data/
 │   ├── IFlightLoggingService.cs           # Logging + stats + spot query interface
 │   └── SqliteFlightLoggingService.cs      # SQLite implementation
@@ -443,9 +454,10 @@ flightTracker/
 │   └── FlyByArcHelper.cs                  # Fly-by turn arc geometry (R=TAS²/g·tan25°, arc sampling)
 ├── Display/FlightTableRenderer.cs         # Terminal table (Spectre.Console)
 ├── flightLegDataArinc/
-│   └── arinc_eh/                          # open-flightmaps ARINC 424 navdata (EH region)
-│       ├── embedded/arinc_eh.pc           # Full European fixes + navaids (~83K records)
-│       └── isolated/arinc_eh.pc           # EH-region-only subset (~16K records)
+│   ├── arinc_eh/                          # open-flightmaps ARINC 424 (EH region, terminal area only)
+│   │   ├── embedded/arinc_eh.pc           # Full European fixes + navaids (~83K records)
+│   │   └── isolated/arinc_eh.pc           # EH-region-only subset (~16K records)
+│   └── little_navmap_navigraph.sqlite     # Navigraph airway database (~134 MB, NOT in git — copy manually)
 ├── appsettings.example.json               # Config template (copy to appsettings.json)
 ├── ec2-setup.sh                           # One-time EC2 setup (run on EC2)
 ├── redeploy.sh                            # Pull + restart while SSHed into EC2
