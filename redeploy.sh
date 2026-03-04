@@ -26,18 +26,30 @@ git pull
 step "Publishing app..."
 dotnet publish -c Release -o "$APP_DIR"
 
-# ── 3. Check Navigraph SQLite ─────────────────────────────────────────────────
+# ── 3. Sync nav-data files to publish dir ────────────────────────────────────
 
-NAVDB="$APP_DIR/flightLegDataArinc/little_navmap_navigraph.sqlite"
-if [[ ! -f "$NAVDB" ]]; then
-    echo ""
-    echo "⚠️  Navigraph SQLite NOT FOUND at: $NAVDB"
-    echo "   All flights will fall back to direct paths (no airway snapping)."
-    echo "   Copy it from your local machine with:"
-    echo "   scp /path/to/little_navmap_navigraph.sqlite ec2-user@<HOST>:$NAVDB"
+NAVDATA_SRC="$REPO_DIR/flightLegDataArinc"
+NAVDATA_DST="$APP_DIR/flightLegDataArinc"
+mkdir -p "$NAVDATA_DST"
+
+# Sync the ARINC 424 terminal-area data
+if [[ -d "$NAVDATA_SRC/arinc_eh" ]]; then
+    cp -r "$NAVDATA_SRC/arinc_eh" "$NAVDATA_DST/"
 fi
 
-# ── 4. Config sanity check ────────────────────────────────────────────────────
+# Symlink the Navigraph SQLite (134 MB — avoid copying on every deploy)
+NAVDB_SRC="$NAVDATA_SRC/little_navmap_navigraph.sqlite"
+NAVDB_DST="$NAVDATA_DST/little_navmap_navigraph.sqlite"
+if [[ -f "$NAVDB_SRC" ]]; then
+    ln -sf "$NAVDB_SRC" "$NAVDB_DST"
+    echo "   Navigraph SQLite linked: $NAVDB_DST → $NAVDB_SRC"
+else
+    echo ""
+    echo "⚠️  Navigraph SQLite NOT FOUND at: $NAVDB_SRC"
+    echo "   All flights will fall back to direct paths (no airway snapping)."
+    echo "   Copy it from your local machine with:"
+    echo "   scp /path/to/little_navmap_navigraph.sqlite ec2-user@<HOST>:$NAVDB_SRC"
+fi
 
 # ── 4. Config sanity check ────────────────────────────────────────────────────
 
