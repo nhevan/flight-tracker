@@ -306,6 +306,15 @@ public sealed class TelegramNotificationService : ITelegramNotificationService
         if (windParts.Count > 0)
             sb.AppendLine(string.Join(" | ", windParts));
 
+        // ── Predicted path status ────────────────────────────────────────────
+        if (ef.Route is not null)
+        {
+            if (ef.PredictedPath is not null)
+                sb.AppendLine($"🔵 Route: {ef.PredictedPath.Points.Count} waypoints");
+            else
+                sb.AppendLine("⚪ Route: path unavailable");
+        }
+
         // ── AI facts (omitted on course-change re-notifications) ─────────────
         if (previousHeading is null && !string.IsNullOrWhiteSpace(ef.AircraftFacts))
             sb.Append($"\n✈️ {EscapeHtml(ef.AircraftFacts)}");
