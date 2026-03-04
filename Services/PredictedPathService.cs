@@ -85,7 +85,8 @@ public sealed class PredictedPathService : IPredictedPathService
                 return new PredictedFlightPath(result.Points.AsReadOnly(), NavDataLog: log);
             }
 
-            string noAirwayLog = $"Navigraph ✗ no airway matched (hdg {acHeading.Value:F0}°, {result is null ? "N/A" : $"{(result?.SegmentsScanned ?? 0)} segs"} scanned)\nARINC: not active\nFallback: direct path";
+            string segsInfo = result is null ? "N/A" : $"{result.SegmentsScanned} segs";
+            string noAirwayLog = $"Navigraph ✗ no airway matched (hdg {acHeading.Value:F0}°, {segsInfo} scanned)\nARINC: not active\nFallback: direct path";
             Console.WriteLine($"[PredictedPath] {callsign}: no airway found — falling back to direct path");
             return BuildDirectPath(ef, noAirwayLog);
         }
