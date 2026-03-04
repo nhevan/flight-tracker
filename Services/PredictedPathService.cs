@@ -62,11 +62,10 @@ public sealed class PredictedPathService : IPredictedPathService
     {
         string callsign = ef.State.Callsign;
 
-        double? acLat     = ef.State.Latitude;
-        double? acLon     = ef.State.Longitude;
-        double? acHeading = ef.State.HeadingDegrees;
-        double? destLat   = ef.Route?.DestLat;
-        double? destLon   = ef.Route?.DestLon;
+        double? acLat   = ef.State.Latitude;
+        double? acLon   = ef.State.Longitude;
+        double? destLat = ef.Route?.DestLat;
+        double? destLon = ef.Route?.DestLon;
 
         if (acLat is null || acLon is null || destLat is null || destLon is null)
         {
@@ -74,11 +73,11 @@ public sealed class PredictedPathService : IPredictedPathService
             return null;
         }
 
-        // 1. Try airway snapping when we have a heading
-        if (acHeading.HasValue)
+        // 1. Try airway snapping (always — bearing is computed from position→destination internally)
+        if (_navData.IsAvailable)
         {
             var result = _navData.GetAirwayPath(
-                acLat.Value, acLon.Value, acHeading.Value,
+                acLat.Value, acLon.Value,
                 destLat.Value, destLon.Value);
 
             if (result is not null && result.Points.Count >= 2)
@@ -91,24 +90,16 @@ public sealed class PredictedPathService : IPredictedPathService
                 return new PredictedFlightPath(result.Points.AsReadOnly(), NavDataLog: log);
             }
 
-            string segsInfo = result?.SegmentsScanned.ToString() ?? "N/A";
-            string noAirwayLog;
-            if (!_navData.IsAvailable)
-            {
-                noAirwayLog = "Navigraph ✗ DB not found — copy little_navmap_navigraph.sqlite to flightLegDataArinc/\nFallback: direct path";
-                Console.WriteLine($"[PredictedPath] {callsign}: Navigraph DB not available — falling back to direct path");
-            }
-            else
-            {
-                noAirwayLog = $"Navigraph ✗ no airway matched (hdg {acHeading.Value:F0}°, {segsInfo} segs scanned)\nARINC: terminal area only (4 NL fixes, not applicable)\nFallback: direct path";
-                Console.WriteLine($"[PredictedPath] {callsign}: no airway found — falling back to direct path");
-            }
+            string segsInfo = result?.SegmentsScanned.ToString() ?? "0";
+            string noAirwayLog = $"Navigraph ✗ no airway matched ({segsInfo} segs scanned)\nARINC: terminal area only (4 NL fixes, not applicable)\nFallback: direct path";
+            Console.WriteLine($"[PredictedPath] {callsign}: no airway found — falling back to direct path");
             return BuildDirectPath(ef, noAirwayLog);
         }
 
-        // 2. Fall back to direct origin → dest (no heading available)
-        string noHeadingLog = "Navigraph: skipped (no heading data)\nARINC: terminal area only (4 NL fixes, not applicable)\nFallback: direct path";
-        return BuildDirectPath(ef, noHeadingLog);
+        // DB not available
+        string dbMissingLog = "Navigraph ✗ DB not found — copy little_navmap_navigraph.sqlite to flightLegDataArinc/\nFallback: direct path";
+        Console.WriteLine($"[PredictedPath] {callsign}: Navigraph DB not available — falling back to direct path");
+        return BuildDirectPath(ef, dbMissingLog);
     }
 
     private PredictedFlightPath? BuildDirectPath(EnrichedFlightState ef, string? navDataLog = null)

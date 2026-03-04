@@ -106,14 +106,19 @@ public sealed class NavigraphNavDataService : INavigraphNavDataService
     // ── Airway snapping ───────────────────────────────────────────────────────
 
     public AirwayPathResult? GetAirwayPath(
-        double acLat, double acLon, double acHeadingDeg,
+        double acLat, double acLon,
         double destLat, double destLon)
     {
         try
         {
-            double totalDist = Haversine.DistanceKm(acLat, acLon, destLat, destLon);
+            double totalDist    = Haversine.DistanceKm(acLat, acLon, destLat, destLon);
+            // Use the great-circle bearing toward the destination as the reference.
+            // This is computed from known data and is always correct — the aircraft's
+            // live ADS-B heading is NOT used because it includes wind crab, ATC deviations,
+            // and climb headings that can differ from the actual route.
+            double bearingToDest = FlyByArcHelper.BearingDeg(acLat, acLon, destLat, destLon);
             Console.WriteLine(
-                $"[Navigraph] GetAirwayPath: pos=({acLat:F3},{acLon:F3}) hdg={acHeadingDeg:F0}° " +
+                $"[Navigraph] GetAirwayPath: pos=({acLat:F3},{acLon:F3}) bearingToDest={bearingToDest:F0}° " +
                 $"dest=({destLat:F3},{destLon:F3}) dist={totalDist:F0}km");
 
             if (totalDist < StarCutoffKm)
@@ -127,16 +132,17 @@ public sealed class NavigraphNavDataService : INavigraphNavDataService
             var usedAirwayKeys  = new HashSet<(string Name, int Frag)>();
             int totalSegsScanned = 0;
 
-            double curLat     = acLat;
-            double curLon     = acLon;
-            double curHeading = acHeadingDeg;
+            double curLat = acLat;
+            double curLon = acLon;
 
             for (int chain = 0; chain < MaxAirwayChain; chain++)
             {
                 if (Haversine.DistanceKm(curLat, curLon, destLat, destLon) < StarCutoffKm)
                     break;
 
-                var (candidate, segsScanned) = FindBestSegment(curLat, curLon, curHeading, destLat, destLon);
+                // Recompute bearing from current chain position toward destination each iteration
+                double curBearing = FlyByArcHelper.BearingDeg(curLat, curLon, destLat, destLon);
+                var (candidate, segsScanned) = FindBestSegment(curLat, curLon, curBearing, destLat, destLon);
                 totalSegsScanned += segsScanned;
 
                 if (candidate is null)
@@ -162,10 +168,9 @@ public sealed class NavigraphNavDataService : INavigraphNavDataService
                 airwaysUsed.Add(candidate.AirwayName);
                 allPoints.AddRange(waypoints);
 
-                curLat  = waypoints[^1].Lat;
-                curLon  = waypoints[^1].Lon;
-                // Point the next search heading toward the destination
-                curHeading = FlyByArcHelper.BearingDeg(curLat, curLon, destLat, destLon);
+                curLat = waypoints[^1].Lat;
+                curLon = waypoints[^1].Lon;
+                // Bearing is recomputed at the top of each iteration
             }
 
             if (allPoints.Count < 1) return null;

@@ -48,14 +48,15 @@ public interface INavigraphNavDataService
 
     /// <summary>
     /// Infers the enroute path from the aircraft's current position toward
-    /// the destination by snapping to the nearest heading-aligned airway and
-    /// following its ordered waypoints.
+    /// the destination by snapping to the nearest airway whose bearing aligns
+    /// with the great-circle direction from the aircraft toward the destination,
+    /// then following its ordered waypoints.
     /// Returns null when no suitable airway is found (caller should fall back
     /// to a direct origin→dest line).
     /// The returned path starts at the aircraft's current position and ends
     /// near the destination.
     /// </summary>
     AirwayPathResult? GetAirwayPath(
-        double acLat, double acLon, double acHeadingDeg,
+        double acLat, double acLon,
         double destLat, double destLon);
 }
