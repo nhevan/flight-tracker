@@ -42,6 +42,13 @@ services.AddSingleton<IArinc424NavDataService>(_ =>
     new Arinc424NavDataService(Path.Combine(AppContext.BaseDirectory, "flightLegDataArinc", "arinc_eh")));
 services.AddSingleton<INavigraphNavDataService>(_ =>
     new NavigraphNavDataService(Path.Combine(AppContext.BaseDirectory, "flightLegDataArinc", "little_navmap_navigraph.sqlite")));
+services.AddHttpClient("flightplandatabase", c =>
+{
+    c.BaseAddress = new Uri("https://api.flightplandatabase.com/");
+    c.Timeout = TimeSpan.FromSeconds(10);
+    c.DefaultRequestHeaders.UserAgent.ParseAdd("FlightTracker/1.0");
+});
+services.AddSingleton<IFlightPlanDBService, FlightPlanDBService>();
 services.AddSingleton<IPredictedPathService, PredictedPathService>();
 services.AddSingleton<IFlightEnrichmentService, FlightEnrichmentService>();
 services.AddSingleton<ITelegramNotificationService, TelegramNotificationService>();
