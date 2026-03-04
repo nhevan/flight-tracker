@@ -96,7 +96,7 @@ public sealed class AirplanesLiveService : IFlightService
             var raw = await JsonSerializer.DeserializeAsync<AirplanesLiveResponse>(
                 stream, JsonOptions, cancellationToken);
 
-            if (raw?.Ac is null || raw.Ac.Count == 0) return null;
+            if (raw?.Ac is null || raw.Ac.Length == 0) return null;
 
             var loc = _settings.HomeLocation;
             return raw.Ac
