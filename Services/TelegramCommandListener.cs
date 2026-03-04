@@ -471,43 +471,60 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
             var state = new FlightState
             {
                 Icao24                      = "aabbcc",
-                Callsign                    = "KLM1023",
+                Callsign                    = "RYR4562",
                 OriginCountry               = "Netherlands",
                 Latitude                    = testLat,
                 Longitude                   = testLon,
-                BarometricAltitudeMeters    = 6000,
+                BarometricAltitudeMeters    = 3500,
                 OnGround                    = false,
-                VelocityMetersPerSecond     = 230,      // ≈ 828 km/h
-                HeadingDegrees              = 180,      // due south
-                VerticalRateMetersPerSecond = -5,
+                VelocityMetersPerSecond     = 200,      // ≈ 720 km/h
+                HeadingDegrees              = 270,      // westbound (EHRD departure toward London)
+                VerticalRateMetersPerSecond = 8,
                 DistanceKm                  = distKm,
-                AircraftDescription         = "Airbus A320-200",
-                WindDirectionDeg            = 270,
-                WindSpeedKnots              = 15,
-                OutsideAirTempC             = -25,
+                AircraftDescription         = "Boeing 737-800",
+                WindDirectionDeg            = 090,
+                WindSpeedKnots              = 12,
+                OutsideAirTempC             = -18,
             };
 
             var route = new FlightRoute(
-                OriginIcao: "EHAM", OriginIata: "AMS",
-                OriginName: "Amsterdam Airport Schiphol",
-                OriginLat: 52.308, OriginLon: 4.764,
+                OriginIcao: "EHRD", OriginIata: "RTM",
+                OriginName: "Rotterdam The Hague Airport",
+                OriginLat: 51.957, OriginLon: 4.442,
                 DestIcao:  "EGLL", DestIata:  "LHR",
                 DestName:  "London Heathrow Airport",
                 DestLat:   51.477, DestLon:  -0.461,
-                RouteDistanceKm: 370);
+                RouteDistanceKm: 310);
 
             var aircraft = new AircraftInfo(
-                TypeCode:     "A320",
-                Registration: "PH-TEST",
-                Operator:     "Test Airways",
+                TypeCode:     "B738",
+                Registration: "EI-TEST",
+                Operator:     "Ryanair",
                 Category:     "Narrow-body Jet");
+
+            // Sample predicted path: EHRD departure westbound toward London Heathrow.
+            // Starts near the test plane and curves southwest across the North Sea.
+            var samplePath = new PredictedFlightPath(new List<(double Lat, double Lon)>
+            {
+                (testLat,  testLon),            // aircraft position
+                (51.98,    4.20),               // west of Rotterdam, descending to coast
+                (51.99,    3.95),               // Hoek van Holland area
+                (52.00,    3.55),               // North Sea coast
+                (51.95,    2.90),               // over North Sea
+                (51.82,    2.10),               // mid North Sea
+                (51.65,    1.40),               // approaching English coast
+                (51.55,    0.80),               // over Essex
+                (51.50,    0.20),               // outer London
+                (51.477,  -0.461),              // EGLL
+            });
 
             var flight = new EnrichedFlightState(
                 State:         state,
                 Route:         route,
                 Aircraft:      aircraft,
                 PhotoUrl:      null,    // exercises the map-only send path
-                AircraftFacts: null);
+                AircraftFacts: null,
+                PredictedPath: samplePath);
 
             double etaSeconds = distKm * 1000.0 / state.VelocityMetersPerSecond!.Value;
 
