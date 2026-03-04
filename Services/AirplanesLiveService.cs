@@ -72,6 +72,44 @@ public sealed class AirplanesLiveService : IFlightService
         return flights;
     }
 
+    public async Task<FlightState?> GetFlightByCallsignAsync(
+        string callsign, CancellationToken cancellationToken)
+    {
+        string key = callsign.Trim().ToUpperInvariant();
+        if (string.IsNullOrEmpty(key)) return null;
+
+        string url = $"callsign/{Uri.EscapeDataString(key)}";
+
+        try
+        {
+            using HttpResponseMessage response = await _httpClient.GetAsync(url, cancellationToken);
+
+            if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+            {
+                Console.WriteLine("[AirplanesLive] 429 — rate limited on callsign lookup");
+                return null;
+            }
+
+            if (!response.IsSuccessStatusCode) return null;
+
+            await using Stream stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+            var raw = await JsonSerializer.DeserializeAsync<AirplanesLiveResponse>(
+                stream, JsonOptions, cancellationToken);
+
+            if (raw?.Ac is null || raw.Ac.Count == 0) return null;
+
+            var loc = _settings.HomeLocation;
+            return raw.Ac
+                .Select(a => MapToFlightState(a, loc.Latitude, loc.Longitude))
+                .FirstOrDefault(f => f is not null);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[AirplanesLive] GetFlightByCallsignAsync({callsign}): {ex.Message}");
+            return null;
+        }
+    }
+
     private static FlightState? MapToFlightState(
         AirplanesLiveAircraft a, double homeLat, double homeLon)
     {

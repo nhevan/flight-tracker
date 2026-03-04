@@ -21,6 +21,8 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
     private readonly ITelegramNotificationService _notificationService;
     private readonly IAnthropicChatService _chatService;
     private readonly IPredictedPathService _predictedPathService;
+    private readonly IFlightService _flightService;
+    private readonly IFlightRouteService _routeService;
     private readonly HttpClient _httpClient;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -34,7 +36,9 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
         IHttpClientFactory httpClientFactory,
         ITelegramNotificationService notificationService,
         IAnthropicChatService chatService,
-        IPredictedPathService predictedPathService)
+        IPredictedPathService predictedPathService,
+        IFlightService flightService,
+        IFlightRouteService routeService)
     {
         _settings             = settings.Telegram;
         _homeLocation         = settings.HomeLocation;
@@ -43,6 +47,8 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
         _notificationService  = notificationService;
         _chatService          = chatService;
         _predictedPathService = predictedPathService;
+        _flightService        = flightService;
+        _routeService         = routeService;
         _httpClient           = httpClientFactory.CreateClient("TelegramListener");
         _httpClient.Timeout   = TimeSpan.FromSeconds(40); // > long-poll timeout
     }
@@ -61,7 +67,7 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
         await DeleteWebhookAsync(cancellationToken);
 
         long offset = 0;
-        Console.WriteLine("[TelegramListener] Listening for commands (/stats, /spot, /spots, /range, /zoom, /alt, /rotate, /test)...");
+        Console.WriteLine("[TelegramListener] Listening for commands (/stats, /spot, /spots, /range, /zoom, /alt, /rotate, /test, /plot)...");
 
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -122,6 +128,10 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
                     {
                         await HandleTestCommandAsync(update.Message!.Chat.Id, cancellationToken);
                     }
+                    else if (text.StartsWith("/plot", StringComparison.OrdinalIgnoreCase))
+                    {
+                        await HandlePlotCommandAsync(update.Message!.Chat.Id, text, cancellationToken);
+                    }
                     else
                     {
                         string? reply = await _chatService.ChatAsync(text, cancellationToken);
@@ -129,7 +139,7 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
                             reply ??
                             "🤷 I didn't recognise that command.\n\n" +
                             "<b>Available commands:</b>\n" +
-                            "/stats · /spot · /spots · /range · /zoom · /alt · /rotate · /test",
+                            "/stats · /spot · /spots · /range · /zoom · /alt · /rotate · /test · /plot &lt;callsign&gt;",
                             cancellationToken);
                     }
                 }
@@ -455,6 +465,87 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
                    : "⚠️ Could not write to appsettings.json — active now but resets on restart."),
             cancellationToken);
         Console.WriteLine($"[TelegramListener] /alt command: MaxAltitudeMeters set to {alt:F0}");
+    }
+
+    private async Task HandlePlotCommandAsync(long chatId, string text, CancellationToken cancellationToken)
+    {
+        string[] parts = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length < 2)
+        {
+            await SendMessageAsync(chatId,
+                "Usage: /plot &lt;callsign&gt;\nExample: /plot HV6992\n\n" +
+                "Looks up the flight live, computes its predicted path from Navigraph airways, " +
+                "and sends you the full notification with map.",
+                cancellationToken);
+            return;
+        }
+
+        string callsign = parts[1].Trim().ToUpperInvariant();
+
+        try
+        {
+            await SendMessageAsync(chatId, $"⏳ Looking up <b>{EscapeHtml(callsign)}</b> in live feed…", cancellationToken);
+
+            // 1. Fetch live position from airplanes.live
+            FlightState? state = await _flightService.GetFlightByCallsignAsync(callsign, cancellationToken);
+            if (state is null)
+            {
+                await SendMessageAsync(chatId,
+                    $"❌ <b>{EscapeHtml(callsign)}</b> not found in live ADS-B data.\n" +
+                    "The flight may be on the ground, out of range, or not transmitting ADS-B.",
+                    cancellationToken);
+                return;
+            }
+
+            // 2. Fetch route (origin/destination) from adsbdb
+            FlightRoute? route = await _routeService.GetRouteAsync(callsign, cancellationToken);
+
+            // 3. Build preliminary enriched state for path computation
+            var preliminary = new EnrichedFlightState(
+                State:         state,
+                Route:         route,
+                Aircraft:      null,
+                PhotoUrl:      null,
+                AircraftFacts: null,
+                PredictedPath: null);
+
+            // 4. Compute predicted path (clears cache for fresh result)
+            _predictedPathService.InvalidateCache(callsign);
+            var predictedPath = await _predictedPathService.GetPredictedPathAsync(preliminary, cancellationToken);
+
+            // 5. Assemble final enriched state
+            var flight = new EnrichedFlightState(
+                State:         state,
+                Route:         route,
+                Aircraft:      null,
+                PhotoUrl:      null,
+                AircraftFacts: null,
+                PredictedPath: predictedPath);
+
+            // 6. ETA to home location
+            double? etaSeconds = null;
+            if (state.DistanceKm.HasValue && state.VelocityMetersPerSecond is > 0)
+                etaSeconds = state.DistanceKm.Value * 1000.0 / state.VelocityMetersPerSecond.Value;
+
+            // 7. Send full notification (includes map with predicted path)
+            await _notificationService.NotifyAsync(
+                flight, "En Route", etaSeconds, visitorInfo: null, cancellationToken,
+                _homeLocation.Latitude, _homeLocation.Longitude);
+
+            string pathSummary = predictedPath is null
+                ? "⚠️ No path — missing route data"
+                : predictedPath.IsDirect
+                    ? "⚡ Direct path only (no airway matched)"
+                    : $"✅ {predictedPath.Points.Count} waypoints via airways";
+
+            await SendMessageAsync(chatId, $"✅ <b>{EscapeHtml(callsign)}</b> plotted! {pathSummary}", cancellationToken);
+            Console.WriteLine($"[TelegramListener] /plot {callsign}: {pathSummary}");
+        }
+        catch (Exception ex)
+        {
+            await SendMessageAsync(chatId, $"❌ Plot failed for <b>{EscapeHtml(callsign)}</b>: {EscapeHtml(ex.Message)}", cancellationToken);
+            Console.WriteLine($"[TelegramListener] /plot {callsign} error: {ex.Message}");
+        }
     }
 
     private async Task HandleTestCommandAsync(long chatId, CancellationToken cancellationToken)
