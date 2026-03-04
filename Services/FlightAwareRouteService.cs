@@ -41,6 +41,11 @@ public sealed class FlightAwareRouteService : IFlightAwareRouteService
         _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("FlightTracker/1.0");
         if (!string.IsNullOrEmpty(_settings.ApiKey))
             _httpClient.DefaultRequestHeaders.Add("x-apikey", _settings.ApiKey);
+
+        if (!_settings.Enabled || string.IsNullOrWhiteSpace(_settings.ApiKey))
+            Console.WriteLine("[FlightAware] Route lookup disabled (Enabled=false or ApiKey missing) — predicted paths unavailable.");
+        else
+            Console.WriteLine("[FlightAware] Route lookup enabled.");
     }
 
     public Task<FiledRoute?> GetFiledRouteAsync(string callsign, CancellationToken cancellationToken)
