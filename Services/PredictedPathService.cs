@@ -74,29 +74,28 @@ public sealed class PredictedPathService : IPredictedPathService
         // 1. Try airway snapping when we have a heading
         if (acHeading.HasValue)
         {
-            var airwayPoints = _navData.GetAirwayPath(
+            var result = _navData.GetAirwayPath(
                 acLat.Value, acLon.Value, acHeading.Value,
                 destLat.Value, destLon.Value);
 
-            if (airwayPoints is not null && airwayPoints.Count >= 2)
+            if (result is not null && result.Points.Count >= 2)
             {
-                Console.WriteLine(
-                    $"[PredictedPath] {callsign}: airway path with {airwayPoints.Count} points");
-                return new PredictedFlightPath(airwayPoints.AsReadOnly());
+                string log = $"Navigraph ✓ airway {result.AirwayName} · {result.Points.Count} wpts ({result.SegmentsScanned} segs scanned)\nARINC: not active";
+                Console.WriteLine($"[PredictedPath] {callsign}: airway path with {result.Points.Count} points");
+                return new PredictedFlightPath(result.Points.AsReadOnly(), NavDataLog: log);
             }
 
+            string noAirwayLog = $"Navigraph ✗ no airway matched (hdg {acHeading.Value:F0}°, {result is null ? "N/A" : $"{(result?.SegmentsScanned ?? 0)} segs"} scanned)\nARINC: not active\nFallback: direct path";
             Console.WriteLine($"[PredictedPath] {callsign}: no airway found — falling back to direct path");
+            return BuildDirectPath(ef, noAirwayLog);
         }
 
-        // 2. Fall back to direct origin → dest
-        return BuildDirectPath(ef);
+        // 2. Fall back to direct origin → dest (no heading available)
+        string noHeadingLog = "Navigraph: skipped (no heading data)\nARINC: not active\nFallback: direct path";
+        return BuildDirectPath(ef, noHeadingLog);
     }
 
-    /// <summary>
-    /// Builds a straight great-circle path (origin → dest).
-    /// Returns null if origin or destination coordinates are missing.
-    /// </summary>
-    private PredictedFlightPath? BuildDirectPath(EnrichedFlightState ef)
+    private PredictedFlightPath? BuildDirectPath(EnrichedFlightState ef, string? navDataLog = null)
     {
         string callsign = ef.State.Callsign;
 
@@ -122,8 +121,9 @@ public sealed class PredictedPathService : IPredictedPathService
             return null;
         }
 
+        string log = navDataLog ?? "Navigraph: skipped\nARINC: not active\nFallback: direct path";
         Console.WriteLine($"[PredictedPath] {callsign}: using direct path (origin → dest)");
-        return new PredictedFlightPath(points.AsReadOnly(), IsDirect: true);
+        return new PredictedFlightPath(points.AsReadOnly(), IsDirect: true, NavDataLog: log);
     }
 
     // ── Path trimming ─────────────────────────────────────────────────────────

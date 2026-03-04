@@ -320,6 +320,15 @@ public sealed class TelegramNotificationService : ITelegramNotificationService
                 sb.AppendLine("⚪ Route: path unavailable");
         }
 
+        // ── Nav data log ─────────────────────────────────────────────────────
+        if (!string.IsNullOrEmpty(ef.PredictedPath?.NavDataLog))
+        {
+            sb.AppendLine();
+            sb.AppendLine("📋 <b>Nav Data</b>");
+            foreach (string line in ef.PredictedPath.NavDataLog.Split('\n'))
+                sb.AppendLine($"  {EscapeHtml(line)}");
+        }
+
         // ── AI facts (omitted on course-change re-notifications) ─────────────
         if (previousHeading is null && !string.IsNullOrWhiteSpace(ef.AircraftFacts))
             sb.Append($"\n✈️ {EscapeHtml(ef.AircraftFacts)}");

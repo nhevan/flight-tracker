@@ -76,7 +76,7 @@ public sealed class NavigraphNavDataService : INavigraphNavDataService
 
     // ── Airway snapping ───────────────────────────────────────────────────────
 
-    public List<(double Lat, double Lon)>? GetAirwayPath(
+    public AirwayPathResult? GetAirwayPath(
         double acLat, double acLon, double acHeadingDeg,
         double destLat, double destLon)
     {
@@ -86,7 +86,7 @@ public sealed class NavigraphNavDataService : INavigraphNavDataService
             if (Haversine.DistanceKm(acLat, acLon, destLat, destLon) < StarCutoffKm)
                 return null;
 
-            var candidate = FindBestSegment(acLat, acLon, acHeadingDeg, destLat, destLon);
+            var (candidate, segsScanned) = FindBestSegment(acLat, acLon, acHeadingDeg, destLat, destLon);
             if (candidate is null) return null;
 
             var waypoints = FollowAirway(
@@ -109,7 +109,7 @@ public sealed class NavigraphNavDataService : INavigraphNavDataService
                 $"[Navigraph] Airway snapped to {candidate.AirwayName}: " +
                 $"{path.Count} points toward ({destLat:F2},{destLon:F2})");
 
-            return path;
+            return new AirwayPathResult(path, candidate.AirwayName, segsScanned);
         }
         catch (Exception ex)
         {
@@ -124,7 +124,7 @@ public sealed class NavigraphNavDataService : INavigraphNavDataService
         string AirwayName, int FragmentNo, int SequenceNo,
         bool ForwardDirection, double Score);
 
-    private SegmentCandidate? FindBestSegment(
+    private (SegmentCandidate? Candidate, int SegmentsScanned) FindBestSegment(
         double acLat, double acLon, double acHeadingDeg,
         double destLat, double destLon)
     {
@@ -147,10 +147,12 @@ public sealed class NavigraphNavDataService : INavigraphNavDataService
         cmd.Parameters.AddWithValue("@lonMax", acLon + SearchHalfDegLon);
 
         SegmentCandidate? best = null;
+        int scanned = 0;
 
         using var rdr = cmd.ExecuteReader();
         while (rdr.Read())
         {
+            scanned++;
             string name  = rdr.GetString(0);
             int    frag  = rdr.GetInt32(1);
             int    seq   = rdr.GetInt32(2);
@@ -187,7 +189,7 @@ public sealed class NavigraphNavDataService : INavigraphNavDataService
             }
         }
 
-        return best;
+        return (best, scanned);
     }
 
     // ── Airway following ──────────────────────────────────────────────────────

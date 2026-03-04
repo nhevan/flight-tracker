@@ -3,6 +3,18 @@ namespace FlightTracker.Services;
 using FlightTracker.Models;
 
 /// <summary>
+/// Result returned by <see cref="INavigraphNavDataService.GetAirwayPath"/>.
+/// </summary>
+public sealed record AirwayPathResult(
+    /// <summary>Ordered waypoints starting at the aircraft, ending near destination.</summary>
+    List<(double Lat, double Lon)> Points,
+    /// <summary>Name of the airway that was snapped to (e.g. "UL607").</summary>
+    string AirwayName,
+    /// <summary>Number of airway segments examined in the bounding-box query.</summary>
+    int SegmentsScanned
+);
+
+/// <summary>
 /// Provides fix resolution and airway-based path inference using the
 /// Navigraph / Little NavMap SQLite database (little_navmap_navigraph.sqlite).
 ///
@@ -31,10 +43,10 @@ public interface INavigraphNavDataService
     /// following its ordered waypoints.
     /// Returns null when no suitable airway is found (caller should fall back
     /// to a direct origin→dest line).
-    /// The returned list starts at the aircraft's current position and ends
+    /// The returned path starts at the aircraft's current position and ends
     /// near the destination.
     /// </summary>
-    List<(double Lat, double Lon)>? GetAirwayPath(
+    AirwayPathResult? GetAirwayPath(
         double acLat, double acLon, double acHeadingDeg,
         double destLat, double destLon);
 }
