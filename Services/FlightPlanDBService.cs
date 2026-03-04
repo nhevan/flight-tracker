@@ -2,7 +2,6 @@ namespace FlightTracker.Services;
 
 using System.Collections.Concurrent;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 
 /// <summary>
 /// Retrieves filed flight plans from FlightPlanDatabase.com.

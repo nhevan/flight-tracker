@@ -36,7 +36,7 @@ public sealed class PredictedPathService : IPredictedPathService
     public void InvalidateCache(string callsign) =>
         _cache.TryRemove(callsign, out _);
 
-    public Task<PredictedFlightPath?> GetPredictedPathAsync(
+    public async Task<PredictedFlightPath?> GetPredictedPathAsync(
         EnrichedFlightState flight,
         CancellationToken cancellationToken)
     {
@@ -44,10 +44,10 @@ public sealed class PredictedPathService : IPredictedPathService
         {
             string callsign = flight.State.Callsign;
             if (string.IsNullOrWhiteSpace(callsign) || callsign == "N/A")
-                return Task.FromResult<PredictedFlightPath?>(null);
+                return null;
 
             if (_cache.TryGetValue(callsign, out var cached))
-                return Task.FromResult(cached);
+                return cached;
 
             var path = await BuildPathAsync(flight, cancellationToken);
             _cache[callsign] = path;
@@ -56,7 +56,7 @@ public sealed class PredictedPathService : IPredictedPathService
         catch (Exception ex)
         {
             Console.WriteLine($"[PredictedPath] {flight.State.Callsign}: {ex.Message}");
-            return Task.FromResult<PredictedFlightPath?>(null);
+            return null;
         }
     }
 
@@ -108,7 +108,9 @@ public sealed class PredictedPathService : IPredictedPathService
             }
         }
 
-        string fpdbFailNote = string.IsNullOrEmpty(originIcao) ? "FlightPlanDB: no origin ICAO\n" : "FlightPlanDB ✗ no plan\n";
+        string fpdbFailNote = string.IsNullOrEmpty(originIcao) ? "FlightPlanDB: no origin ICAO\n"
+            : string.IsNullOrEmpty(destIcao)                   ? "FlightPlanDB: no dest ICAO\n"
+            :                                                     "FlightPlanDB ✗ no plan\n";
 
         // 2. Try SQLite airway snapping
         if (_navData.IsAvailable)

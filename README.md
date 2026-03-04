@@ -9,7 +9,7 @@ a low-altitude aircraft is approaching overhead.
 - **Live terminal table** — all flights within your configured range, updated every poll
 - **Rich ADS-B data** — distance, altitude, speed, heading, climb rate, squawk, emergency status
 - **Route information** — origin and destination airport names with live ETA to destination
-- **Predicted flight path** — blue route overlay on the map, inferred entirely offline from the [Navigraph / Little NavMap SQLite database](https://littlenavmap.org) by snapping the aircraft's current position and heading to the nearest matching airway and chaining up to 8 consecutive airways toward the destination
+- **Predicted flight path** — blue route overlay on the map, built from [FlightPlanDB](https://flightplandatabase.com) crowd-sourced filed plans (primary) or by snapping to the nearest matching airways in the [Navigraph / Little NavMap SQLite database](https://littlenavmap.org) and chaining up to 8 airways toward the destination (fallback)
 - **Audible alert** — bell when a new flight enters the area
 - **Telegram notifications** when a flight is ≤ 2 minutes from overhead and below your altitude threshold:
   - 🔁 Repeat visitor detection — "Welcome back! PH-BHO was last seen 3 days ago"
@@ -34,7 +34,7 @@ a low-altitude aircraft is approaching overhead.
 - (Optional) A Telegram bot token and chat ID for notifications
 - (Optional) An [Anthropic API key](https://console.anthropic.com) for AI-generated aircraft facts and smart bot replies
 - (Optional) A [Mapbox access token](https://account.mapbox.com) for live map images
-- (Optional) A [Navigraph / Little NavMap SQLite database](https://littlenavmap.org) (`little_navmap_navigraph.sqlite`) for predicted airway path overlay — place at `flightLegDataArinc/little_navmap_navigraph.sqlite`
+- (Optional) A [Navigraph / Little NavMap SQLite database](https://littlenavmap.org) (`little_navmap_navigraph.sqlite`) for fallback airway-snapping when no FlightPlanDB plan is found — place at `flightLegDataArinc/little_navmap_navigraph.sqlite`
 
 No flight-data API credentials are required. Flight data comes from
 [airplanes.live](https://airplanes.live), a free real-time ADS-B aggregator.
@@ -168,9 +168,33 @@ track is drawn as the trajectory polyline.
 When the Navigraph database is present, a **blue predicted path** is overlaid on the map
 showing the inferred route ahead of the aircraft across chained airways toward the destination.
 
-### Navigraph / Little NavMap SQLite (Predicted Flight Path)
+### Predicted Flight Path
 
-The predicted path is computed entirely offline — no external API calls, no API key required.
+The predicted path uses a three-tier pipeline, tried in order:
+
+1. **[FlightPlanDB](https://flightplandatabase.com)** (primary) — queries the free
+   FlightPlanDB API for a crowd-sourced filed flight plan matching the origin→destination pair.
+   Returns an ordered list of real-world waypoints with lat/lon and airway names directly.
+   No API key required. Free tier allows 100 requests/day; results are cached per route pair
+   so each unique origin→destination costs only 2 HTTP calls regardless of how many aircraft
+   fly that route during the session.
+   Plans with fewer than 6 waypoints (trivial direct-routing stubs) are rejected.
+
+2. **Navigraph / Little NavMap SQLite** (fallback) — when no FlightPlanDB plan is found, the
+   app falls back to offline airway snapping using the local SQLite database (86 000+ segments).
+   See setup instructions below.
+
+3. **Direct great-circle line** — origin → destination, used when neither source finds a route
+   (e.g. oceanic track, unknown route pair, aircraft within 80 km of destination).
+
+The nav data log in each notification shows which source was used, e.g.:
+- `FlightPlanDB ✓ plan 9192199 · UY131→UZ319→B3→B373→A27→UY27 (27 wpts)`
+- `FlightPlanDB ✗ no plan → Navigraph ✓ UY131 → UN860 · 18 wpts (312 segs scanned)`
+- `FlightPlanDB ✗ no plan → Navigraph ✗ no airway matched → direct path`
+
+### Navigraph / Little NavMap SQLite (Airway Fallback)
+
+The predicted path is computed with no API key required for the primary source.
 
 Place the `little_navmap_navigraph.sqlite` file (from [Little NavMap](https://littlenavmap.org)
 or a [Navigraph](https://navigraph.com) export) at:
@@ -182,17 +206,15 @@ flightLegDataArinc/little_navmap_navigraph.sqlite
 > **Note:** This file is ~134 MB and is not included in the repository. It must be copied
 > manually to the EC2 instance at `/opt/flighttracker/app/flightLegDataArinc/little_navmap_navigraph.sqlite`.
 
-When the file is present, each notification includes:
+When the file is present and FlightPlanDB returns no qualifying plan, each notification includes:
 
-- **Airway snapping** — the aircraft's position and heading are matched to the nearest
+- **Airway snapping** — the aircraft's position is matched to the nearest
   heading-aligned airway segment in the `airway` table (86 000+ worldwide segments).
 - **Multi-airway chaining** — after each airway ends, the algorithm finds the next
   aligned airway from the last waypoint and chains up to 8 consecutive airways toward
-  the destination. A typical 1 000 km route produces 25–30 waypoints.
+  the destination. A typical 1 000 km route produces 15–30 waypoints.
 - **Fallback** — when no matching airway is found (e.g. oceanic track, unpublished route),
   a direct great-circle line from origin to destination is used instead.
-- **Nav Data log** in the notification — shows the full chain, e.g.
-  `UY131 → Z319 → UL194 → UN860 · 29 wpts (312 segs scanned)`.
 
 **ARINC 424 data note:** The bundled `flightLegDataArinc/arinc_eh/` file is an
 open-flightmaps airspace-boundary dataset for the EH (Netherlands) region. It contains
@@ -265,8 +287,9 @@ Wind: 270° 45 kts | OAT: -52°C
 🔵 Route: UY131 → Z319 → UL194 · 22 waypoints
 
 📋 Nav Data
-  Navigraph ✓ UY131 → Z319 → UL194 · 22 wpts (298 segs scanned)
-  ARINC: terminal area only (4 NL fixes, not applicable)
+  FlightPlanDB ✓ plan 9192199 · UY131→Z319→UL194 (22 wpts)
+  Navigraph: skipped
+  ARINC: not applicable
 
 ✈️ I'm a Boeing 787-9, registration PH-BHO…
 ```
@@ -282,7 +305,7 @@ Wind: 270° 45 kts | OAT: -52°C
 | Stats | Altitude (+ autopilot target `→ FLxxx` when set), speed, distance from home, ETA |
 | Wind / temp | Wind direction + speed and outside air temperature (when broadcast by aircraft) |
 | Route status | 🔵 with airway chain + waypoint count, or ⚪ when unavailable |
-| Nav Data | Airway chain used (e.g. `UY131 → Z319 → UN860`), waypoints, segments scanned, and ARINC status |
+| Nav Data | Source used (`FlightPlanDB ✓` or `Navigraph ✓` or fallback), airway chain, waypoint count |
 | AI facts | 2–3 sentences from the aircraft's perspective (requires Anthropic; omitted on course-change re-notifications) |
 
 The callsign in the header is a deep link (`http://fr24.com/<lat>,<lon>/11`) that opens
@@ -344,9 +367,10 @@ The database accumulates indefinitely and is never deleted automatically. Inspec
 | [adsbdb.com](https://www.adsbdb.com) | Flight route (origin/destination airport) | None |
 | [hexdb.io](https://hexdb.io) | Aircraft type code, registration, operator | None |
 | [planespotters.net](https://www.planespotters.net) | Aircraft photos | None |
+| [FlightPlanDB](https://flightplandatabase.com) | Crowd-sourced filed flight plans for predicted path (primary, free, 100 req/day) | None |
 | [Anthropic API](https://www.anthropic.com) | AI aircraft facts + smart bot replies (optional) | API key |
 | [Mapbox](https://www.mapbox.com) | Static map images (optional) | Access token |
-| Navigraph / Little NavMap SQLite | Airway segments for predicted path overlay (optional, ~134 MB file) | None (file on disk) |
+| Navigraph / Little NavMap SQLite | Airway segments for predicted path (fallback when FlightPlanDB has no plan, optional, ~134 MB file) | None (file on disk) |
 
 ## Deploying to EC2
 
