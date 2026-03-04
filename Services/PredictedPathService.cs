@@ -74,8 +74,18 @@ public sealed class PredictedPathService : IPredictedPathService
         }
 
         // 1. Try airway snapping (always — bearing is computed from position→destination internally)
+        double distToDestKm = Haversine.DistanceKm(acLat.Value, acLon.Value, destLat.Value, destLon.Value);
+
         if (_navData.IsAvailable)
         {
+            // Skip airway search when near destination (same threshold as NavigraphNavDataService)
+            if (distToDestKm < 150.0)
+            {
+                string nearDestLog = $"Navigraph: on approach ({distToDestKm:F0} km to dest) — direct path";
+                Console.WriteLine($"[PredictedPath] {callsign}: within 150km of dest ({distToDestKm:F0}km) — direct path");
+                return BuildDirectPath(ef, nearDestLog);
+            }
+
             var result = _navData.GetAirwayPath(
                 acLat.Value, acLon.Value,
                 destLat.Value, destLon.Value);
