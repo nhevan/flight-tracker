@@ -18,6 +18,7 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
     private readonly HomeLocationSettings _homeLocation;
     private readonly MapboxSettings _mapboxSettings;
     private readonly IFlightLoggingService _loggingService;
+    private readonly IFlightTrajectoryService _trajectoryService;
     private readonly ITelegramNotificationService _notificationService;
     private readonly IAnthropicChatService _chatService;
     private readonly IPredictedPathService _predictedPathService;
@@ -33,6 +34,7 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
     public TelegramCommandListener(
         AppSettings settings,
         IFlightLoggingService loggingService,
+        IFlightTrajectoryService trajectoryService,
         IHttpClientFactory httpClientFactory,
         ITelegramNotificationService notificationService,
         IAnthropicChatService chatService,
@@ -44,6 +46,7 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
         _homeLocation         = settings.HomeLocation;
         _mapboxSettings       = settings.Mapbox;
         _loggingService       = loggingService;
+        _trajectoryService    = trajectoryService;
         _notificationService  = notificationService;
         _chatService          = chatService;
         _predictedPathService = predictedPathService;
@@ -67,7 +70,7 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
         await DeleteWebhookAsync(cancellationToken);
 
         long offset = 0;
-        Console.WriteLine("[TelegramListener] Listening for commands (/stats, /spot, /spots, /range, /zoom, /alt, /rotate, /test, /plot)...");
+        Console.WriteLine("[TelegramListener] Listening for commands (/stats, /spot, /spots, /range, /zoom, /alt, /rotate, /test, /plot, /record)...");
 
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -132,6 +135,10 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
                     {
                         await HandlePlotCommandAsync(update.Message!.Chat.Id, text, cancellationToken);
                     }
+                    else if (text.Equals("/record", StringComparison.OrdinalIgnoreCase))
+                    {
+                        await HandleRecordCommandAsync(update.Message!.Chat.Id, cancellationToken);
+                    }
                     else
                     {
                         string? reply = await _chatService.ChatAsync(text, cancellationToken);
@@ -139,7 +146,7 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
                             reply ??
                             "🤷 I didn't recognise that command.\n\n" +
                             "<b>Available commands:</b>\n" +
-                            "/stats · /spot · /spots · /range · /zoom · /alt · /rotate · /test · /plot &lt;callsign&gt;",
+                            "/stats · /spot · /spots · /range · /zoom · /alt · /rotate · /test · /plot &lt;callsign&gt; · /record",
                             cancellationToken);
                     }
                 }
@@ -857,6 +864,45 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
 
     private static string EscapeHtml(string s) =>
         s.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;");
+
+    private async Task HandleRecordCommandAsync(long chatId, CancellationToken cancellationToken)
+    {
+        var sessions = await _trajectoryService.GetAllSessionsAsync(cancellationToken);
+
+        if (sessions.Count == 0)
+        {
+            await SendMessageAsync(chatId,
+                "📋 <b>Recorded trajectories</b>\n\nNo recorded trajectories yet.",
+                cancellationToken);
+            return;
+        }
+
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine($"📋 <b>Recorded trajectories</b> — {sessions.Count} session{(sessions.Count == 1 ? "" : "s")}");
+        sb.AppendLine();
+
+        foreach (var s in sessions)
+        {
+            string emoji    = s.FlightType == "Arriving" ? "🛬" : "🛫";
+            string ident    = !string.IsNullOrWhiteSpace(s.Callsign) ? s.Callsign.Trim() : s.Icao24;
+            string route    = (s.OriginIata, s.DestIata) switch
+            {
+                ({ } o, { } d) => $"{o} → {d}",
+                ({ } o, null)  => $"{o} → ?",
+                (null, { } d)  => $"? → {d}",
+                _              => "?"
+            };
+            string date     = s.StartedAt.ToLocalTime().ToString("dd MMM HH:mm");
+            string active   = s.IsComplete ? "" : " · 🔴 Active";
+
+            sb.AppendLine($"{emoji} <b>{EscapeHtml(ident)}</b> — {EscapeHtml(route)} · {s.PointCount} pts · {date}{active}");
+        }
+
+        await SendMessageAsync(chatId, sb.ToString().TrimEnd(), cancellationToken);
+        Console.WriteLine($"[TelegramListener] /record: listed {sessions.Count} session(s).");
+    }
+
+
 
     private static string FormatStatsMessage(FlightStats s, string? locationName,
                                               double homeLat, double homeLon,

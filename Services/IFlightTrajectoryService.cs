@@ -26,6 +26,13 @@ public interface IFlightTrajectoryService
     Task CompleteSessionAsync(string icao24, CancellationToken ct = default);
 
     /// <summary>
+    /// Returns all recorded sessions (both active and completed), ordered most-recent first.
+    /// Each entry includes the callsign, route, flight type, start time, completion status,
+    /// and total number of recorded trajectory points.
+    /// </summary>
+    Task<IReadOnlyList<RecordedSessionInfo>> GetAllSessionsAsync(CancellationToken ct = default);
+
+    /// <summary>
     /// Returns all ICAO24 identifiers that currently have an open tracking session.
     /// Used each poll cycle to close sessions for flights that have left the range.
     /// </summary>

@@ -188,6 +188,47 @@ public sealed class SqliteFlightTrajectoryService : IFlightTrajectoryService
         return points;
     }
 
+    public async Task<IReadOnlyList<RecordedSessionInfo>> GetAllSessionsAsync(CancellationToken ct = default)
+    {
+        using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync(ct);
+
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT s.SessionId,
+                   s.Icao24,
+                   s.Callsign,
+                   s.FlightType,
+                   s.OriginIata,
+                   s.DestIata,
+                   s.StartedAt,
+                   s.IsComplete,
+                   COUNT(p.Id) AS PointCount
+            FROM   FlightTrackingSessions s
+            LEFT JOIN FlightTrajectoryPoints p ON p.SessionId = s.SessionId
+            GROUP  BY s.SessionId
+            ORDER  BY s.StartedAt DESC
+            """;
+
+        var results = new List<RecordedSessionInfo>();
+        using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            results.Add(new RecordedSessionInfo(
+                SessionId:  reader.GetString(0),
+                Icao24:     reader.GetString(1),
+                Callsign:   reader.IsDBNull(2) ? null : reader.GetString(2),
+                FlightType: reader.GetString(3),
+                OriginIata: reader.IsDBNull(4) ? null : reader.GetString(4),
+                DestIata:   reader.IsDBNull(5) ? null : reader.GetString(5),
+                StartedAt:  DateTimeOffset.Parse(reader.GetString(6)),
+                IsComplete: reader.GetInt64(7) == 1,
+                PointCount: (int)reader.GetInt64(8)));
+        }
+
+        return results;
+    }
+
     // ── Private helpers ───────────────────────────────────────────────────────
 
     private async Task PersistNewSessionAsync(
