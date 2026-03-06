@@ -14,17 +14,18 @@ a low-altitude aircraft is approaching overhead.
 - **Telegram notifications** when a flight is ≤ 2 minutes from overhead and below your altitude threshold:
   - 🔁 Repeat visitor detection — "Welcome back! PH-BHO was last seen 3 days ago"
   - 🚨 Emergency and 🪖 military flagging
-  - ↩️ Course-change re-notification when a tracked flight changes bearing significantly, with full accumulated trajectory polyline overlay on the map
+  - ↩️ Course-change re-notification when a tracked flight changes bearing by ≥ 15°, with full accumulated trajectory polyline overlay on the map
   - Full route: `Barcelona (BCN) → Amsterdam (AMS) · arriving in ~2h 15m`
   - Aircraft photo (from planespotters.net) and live Mapbox map with heading trajectory
   - AI-generated facts in the plane's own voice (via Anthropic Claude) — omitted on course-change re-notifications
   - Wind speed/direction and outside air temperature when broadcast by the aircraft
   - Tappable callsign link that opens FlightRadar24 centred on your spot (zoom 11)
-- **Telegram bot commands** — manage spots, adjust range and altitude filter, control map zoom, query stats, send test notifications, and plot any live flight on demand with `/plot <callsign>`
+- **Telegram bot commands** — manage spots, adjust range and altitude filter, control map zoom, query stats, send test notifications, plot any live flight on demand with `/plot <callsign>`, list recorded Rotterdam trajectories with `/record`, and view a trajectory dot-map with `/map <callsign>`
 - **Smart fallback replies** — unknown messages are forwarded to Claude for a helpful plain-text response
 - **Flight statistics** via `/stats` — total sightings, busiest hours, streaks, gaps
 - **Named spot management** — save and switch between multiple named spotting locations
 - **Persistent SQLite history** — every notified flight is logged with full telemetry
+- **Rotterdam Airport trajectory recording** — automatically records the lat/lon path of every Rotterdam (EHRD/RTM) arrival and departure from first sight until landing or leaving range (every 30 s); each ICAO24 is recorded only once; `🔴 Recording trajectory` badge shown in the notification while active; previously-recorded dots rendered as purple markers on the live Mapbox map when the same aircraft is seen again
 - **EC2 deployment** — systemd service with auto-restart and helper deploy scripts
 - **Graceful shutdown** — handles Ctrl+C and SIGTERM cleanly
 
@@ -249,6 +250,8 @@ alt - Set max altitude filter in metres
 rotate - Set map bearing in degrees (0-359) or reset
 test - Send a test flight notification
 plot - Plot a live flight by callsign (e.g. HV6992)
+record - List all recorded Rotterdam flight trajectories
+map - Show recorded trajectory dots on a map: /map <callsign>
 ```
 
 ### Command reference
@@ -269,6 +272,8 @@ plot - Plot a live flight by callsign (e.g. HV6992)
 | `/rotate` | Show the current bearing |
 | `/test` | Send a synthetic notification through the full pipeline to verify everything is wired up correctly |
 | `/plot <callsign>` | Look up a flight live, compute its predicted airway path, and send you the full notification with map (e.g. `/plot HV6992`) |
+| `/record` | List all recorded Rotterdam (EHRD/RTM) flight trajectories with callsign, route, point count, start time, and active/completed status |
+| `/map <callsign>` | Send a map image showing the recorded trajectory dots for a known Rotterdam flight (e.g. `/map HV6992`) |
 
 Any other text is forwarded to Claude (when Anthropic is enabled), which replies helpfully in plain text.
 
@@ -280,6 +285,7 @@ Notifications fire when a flight is ≤ 2 minutes from its closest point to your
 ```
 🔁 Welcome back! PH-BHO was last seen 3 days ago heading to LHR. This is visit #4!
 🟢 KL123 — Towards | 4m 20s
+🔴 Recording trajectory
 London Heathrow (LHR) → Amsterdam Schiphol (AMS) · arriving in ~1h 23m
 Boeing 787-9 · B789 / PH-BHO · KLM Royal Dutch Airlines
 Alt: 2,450 m → FL350 | Speed: 895 km/h | 45.2 km | ETA: 4m 20s
@@ -300,6 +306,7 @@ Wind: 270° 45 kts | OAT: -52°C
 |---------|-------------|
 | Repeat banner | 🔁 if seen before (with visit count + last destination), 👋 for first sighting |
 | Header | Callsign (tappable — opens FlightRadar24 at your spot), direction, ETA to overhead. 🚨 for emergencies (squawk 7700/7600/7500 or declared emergency), 🪖 for military |
+| Recording badge | `🔴 Recording trajectory` — shown while the flight's Rotterdam path is actively being saved to the database |
 | Route | Full airport names with IATA codes and live ETA to destination |
 | Aircraft | Description · type code / registration · operator |
 | Stats | Altitude (+ autopilot target `→ FLxxx` when set), speed, distance from home, ETA |
@@ -313,6 +320,10 @@ FlightRadar24 centred on your spotting location at zoom level 11.
 
 When both a Mapbox map and a planespotters photo are available they are sent as a
 two-photo album (map with the full caption, photo captionless).
+
+When a previously-recorded Rotterdam flight is seen again, its stored trajectory points
+are rendered as small purple dots (`pin-s+cc44ff`) on the Mapbox map so you can see the
+accumulated path from previous visits.
 
 ## Terminal Display
 
@@ -454,7 +465,9 @@ flightTracker/
 │   ├── NavFix.cs                          # Navigational fix (name, lat, lon, type)
 │   ├── PredictedFlightPath.cs             # Ordered lat/lon coordinates of the predicted ahead-path
 │   ├── RepeatVisitorInfo.cs               # Prior sighting count + last-seen details
-│   └── FlightStats.cs                     # Aggregated stats for /stats command
+│   ├── FlightStats.cs                     # Aggregated stats for /stats command
+│   ├── TrackingSession.cs                 # In-memory Rotterdam trajectory session record
+│   └── RecordedSessionInfo.cs             # DTO for /record command (session + point count)
 ├── Services/
 │   ├── AirplanesLiveService.cs            # ADS-B flight data (airplanes.live); includes callsign lookup
 │   ├── FlightEnrichmentService.cs         # Combines route, aircraft, photo, AI facts, predicted path
@@ -469,10 +482,12 @@ flightTracker/
 │   ├── MapboxSnapshotService.cs           # Live map images (Mapbox Static API)
 │   ├── RepeatVisitorService.cs            # Recurring aircraft detection (SQLite)
 │   ├── TelegramNotificationService.cs     # Builds and sends Telegram flight alerts
-│   └── TelegramCommandListener.cs         # Bot command handler (long-polling; /plot + others)
+│   ├── TelegramCommandListener.cs         # Bot command handler (long-polling; /plot + others)
+│   └── IFlightTrajectoryService.cs        # Interface for Rotterdam trajectory recording
 ├── Data/
 │   ├── IFlightLoggingService.cs           # Logging + stats + spot query interface
-│   └── SqliteFlightLoggingService.cs      # SQLite implementation
+│   ├── SqliteFlightLoggingService.cs      # SQLite implementation
+│   └── SqliteFlightTrajectoryService.cs   # Rotterdam trajectory recording (FlightTrackingSessions + FlightTrajectoryPoints tables)
 ├── Helpers/
 │   ├── FlightDirectionHelper.cs           # Geospatial math (direction, ETA, Haversine)
 │   └── FlyByArcHelper.cs                  # Fly-by turn arc geometry (R=TAS²/g·tan25°, arc sampling)
