@@ -121,7 +121,7 @@ public static class FlightDirectionHelper
     /// Returns <c>false</c> when either heading is <c>null</c> (no data to compare).
     /// </summary>
     public static bool HeadingChangedSignificantly(
-        double? previous, double? current, double thresholdDegrees = 45.0)
+        double? previous, double? current, double thresholdDegrees = 15.0)
     {
         if (previous is null || current is null) return false;
         double diff = Math.Abs(previous.Value - current.Value) % 360.0;
