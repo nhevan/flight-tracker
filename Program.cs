@@ -201,7 +201,7 @@ while (!cts.Token.IsCancellationRequested)
         }
 
         // Maintain per-aircraft trajectory history (current visit only).
-        // Append new position, cap at 60 entries (~30 min at 30 s polling),
+        // Append new position, cap at 120 entries (~30 min at 15 s polling),
         // and remove entries for aircraft that have left range.
         var currentIcaos = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var ef in enriched)
@@ -212,7 +212,7 @@ while (!cts.Token.IsCancellationRequested)
             if (!positionHistory.TryGetValue(fs.Icao24, out var hist))
                 positionHistory[fs.Icao24] = hist = new List<(double, double)>();
             hist.Add((fs.Latitude.Value, fs.Longitude.Value));
-            if (hist.Count > 60) hist.RemoveAt(0);
+            if (hist.Count > 120) hist.RemoveAt(0);
         }
         foreach (var key in positionHistory.Keys.Except(currentIcaos).ToList())
             positionHistory.Remove(key);
