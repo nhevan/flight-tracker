@@ -14,7 +14,18 @@ public interface ITelegramNotificationService
                      double homeLat, double homeLon,
                      double? previousHeading = null,
                      IReadOnlyList<(double Lat, double Lon)>? trajectory = null,
-                     bool isBeingRecorded = false);
+                     bool isBeingRecorded = false,
+                     IReadOnlyList<(double Lat, double Lon)>? recordedDots = null);
+
+    /// <summary>
+    /// Sends a map photo to the chat showing previously-recorded trajectory dots for
+    /// <paramref name="callsign"/>.  Does nothing when Telegram is disabled.
+    /// Never throws — all errors are swallowed.
+    /// </summary>
+    Task SendRecordedDotsMapAsync(
+        string callsign,
+        IReadOnlyList<(double Lat, double Lon)> dots,
+        CancellationToken cancellationToken);
 
     /// <summary>
     /// Sends a plain-text status message (startup notice, error alert, etc.).

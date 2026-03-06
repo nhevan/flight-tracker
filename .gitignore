@@ -19,3 +19,4 @@ appsettings.*.json
 
 # Claude
 .claude/
+flightLegDataArinc/little_navmap_navigraph.sqlite

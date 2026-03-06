@@ -40,8 +40,15 @@ public interface IFlightTrajectoryService
 
     /// <summary>
     /// Returns all recorded lat/lon coordinates for the most recent session of
-    /// <paramref name="icao24"/> that is still active, in chronological order.
-    /// Returns an empty list if the flight is not being tracked.
+    /// <paramref name="icao24"/> (active or completed), in chronological order.
+    /// Returns an empty list if no session has ever been recorded for this aircraft.
     /// </summary>
     Task<IReadOnlyList<(double Lat, double Lon)>> GetRecordedPointsAsync(string icao24, CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns all recorded lat/lon coordinates for the most recent session matching
+    /// <paramref name="callsign"/> (active or completed), in chronological order.
+    /// Returns an empty list if no session matches the callsign.
+    /// </summary>
+    Task<IReadOnlyList<(double Lat, double Lon)>> GetRecordedPointsByCallsignAsync(string callsign, CancellationToken ct = default);
 }

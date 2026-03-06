@@ -277,11 +277,14 @@ while (!cts.Token.IsCancellationRequested)
                     ? hist
                     : null;
 
+                var recordedDots = await trajectoryService.GetRecordedPointsAsync(f.Icao24, cts.Token);
+
                 await telegramService.NotifyAsync(ef, dir ?? "Towards", etaSecs, visitorInfo, cts.Token,
                     homeLat, homeLon,
                     previousHeading: bearingChanged ? lastHeading : null,
                     trajectory: trajectory,
-                    isBeingRecorded: trajectoryService.IsTracking(f.Icao24));
+                    isBeingRecorded: trajectoryService.IsTracking(f.Icao24),
+                    recordedDots: recordedDots.Count > 0 ? recordedDots : null);
                 // Only log as a new visit for initial notifications — course-change re-notifications
                 // are part of the same overflight and must not inflate the visit counter.
                 if (!bearingChanged)

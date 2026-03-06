@@ -70,7 +70,7 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
         await DeleteWebhookAsync(cancellationToken);
 
         long offset = 0;
-        Console.WriteLine("[TelegramListener] Listening for commands (/stats, /spot, /spots, /range, /zoom, /alt, /rotate, /test, /plot, /record)...");
+        Console.WriteLine("[TelegramListener] Listening for commands (/stats, /spot, /spots, /range, /zoom, /alt, /rotate, /test, /plot, /record, /map)...");
 
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -139,6 +139,10 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
                     {
                         await HandleRecordCommandAsync(update.Message!.Chat.Id, cancellationToken);
                     }
+                    else if (text.StartsWith("/map", StringComparison.OrdinalIgnoreCase))
+                    {
+                        await HandleMapCommandAsync(update.Message!.Chat.Id, text, cancellationToken);
+                    }
                     else
                     {
                         string? reply = await _chatService.ChatAsync(text, cancellationToken);
@@ -146,7 +150,7 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
                             reply ??
                             "🤷 I didn't recognise that command.\n\n" +
                             "<b>Available commands:</b>\n" +
-                            "/stats · /spot · /spots · /range · /zoom · /alt · /rotate · /test · /plot &lt;callsign&gt; · /record",
+                            "/stats · /spot · /spots · /range · /zoom · /alt · /rotate · /test · /plot &lt;callsign&gt; · /record · /map &lt;callsign&gt;",
                             cancellationToken);
                     }
                 }
@@ -902,7 +906,43 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
         Console.WriteLine($"[TelegramListener] /record: listed {sessions.Count} session(s).");
     }
 
+    private async Task HandleMapCommandAsync(long chatId, string text, CancellationToken cancellationToken)
+    {
+        string callsign = text.Length > 4 ? text[4..].Trim() : string.Empty;
+        if (string.IsNullOrWhiteSpace(callsign))
+        {
+            await SendMessageAsync(chatId,
+                "Usage: /map &lt;callsign&gt;\nExample: /map HV6992",
+                cancellationToken);
+            return;
+        }
 
+        await SendMessageAsync(chatId,
+            $"🔍 Looking up recorded trajectory for <b>{EscapeHtml(callsign)}</b>…",
+            cancellationToken);
+
+        try
+        {
+            var dots = await _trajectoryService.GetRecordedPointsByCallsignAsync(callsign, cancellationToken);
+            if (dots.Count == 0)
+            {
+                await SendMessageAsync(chatId,
+                    $"❌ No recorded trajectory found for <b>{EscapeHtml(callsign)}</b>.\n" +
+                    "Use /record to see all flights with saved trajectories.",
+                    cancellationToken);
+                return;
+            }
+
+            await _notificationService.SendRecordedDotsMapAsync(callsign, dots, cancellationToken);
+            Console.WriteLine($"[TelegramListener] /map: sent {dots.Count} dots for {callsign}.");
+        }
+        catch (Exception ex)
+        {
+            await SendMessageAsync(chatId,
+                $"❌ /map failed for <b>{EscapeHtml(callsign)}</b>: {EscapeHtml(ex.Message)}",
+                cancellationToken);
+        }
+    }
 
     private static string FormatStatsMessage(FlightStats s, string? locationName,
                                               double homeLat, double homeLon,

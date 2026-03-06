@@ -19,6 +19,11 @@ public sealed class SqliteFlightTrajectoryService : IFlightTrajectoryService
     private readonly Dictionary<string, TrackingSession> _activeSessions =
         new(StringComparer.OrdinalIgnoreCase);
 
+    // All ICAO24s that have ever been recorded (active or completed).
+    // Prevents condition-5 violation: each ICAO24 is only recorded once, even across restarts.
+    private readonly HashSet<string> _previouslyRecorded =
+        new(StringComparer.OrdinalIgnoreCase);
+
     private readonly SemaphoreSlim _lock = new(1, 1);
 
     public SqliteFlightTrajectoryService(AppSettings settings)
@@ -81,22 +86,30 @@ public sealed class SqliteFlightTrajectoryService : IFlightTrajectoryService
     {
         using var cmd = conn.CreateCommand();
         cmd.CommandText = """
-            SELECT SessionId, Icao24, Callsign, FlightType, StartedAt
+            SELECT SessionId, Icao24, Callsign, FlightType, StartedAt, IsComplete
             FROM   FlightTrackingSessions
-            WHERE  IsComplete = 0
             """;
 
         using var reader = await cmd.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))
         {
-            var session = new TrackingSession(
-                SessionId:  reader.GetString(0),
-                Icao24:     reader.GetString(1),
-                Callsign:   reader.IsDBNull(2) ? null : reader.GetString(2),
-                FlightType: reader.GetString(3),
-                StartedAt:  DateTimeOffset.Parse(reader.GetString(4)));
+            string icao24   = reader.GetString(1);
+            bool   isActive = reader.GetInt64(5) == 0;
 
-            _activeSessions[session.Icao24] = session;
+            // Every known ICAO24 (active or completed) counts toward condition 5.
+            _previouslyRecorded.Add(icao24);
+
+            if (isActive)
+            {
+                var session = new TrackingSession(
+                    SessionId:  reader.GetString(0),
+                    Icao24:     icao24,
+                    Callsign:   reader.IsDBNull(2) ? null : reader.GetString(2),
+                    FlightType: reader.GetString(3),
+                    StartedAt:  DateTimeOffset.Parse(reader.GetString(4)));
+
+                _activeSessions[icao24] = session;
+            }
         }
     }
 
@@ -121,6 +134,10 @@ public sealed class SqliteFlightTrajectoryService : IFlightTrajectoryService
         {
             if (!_activeSessions.TryGetValue(f.Icao24, out var session))
             {
+                // Condition 5: if this ICAO24 was ever recorded (even in a prior run), skip it.
+                if (_previouslyRecorded.Contains(f.Icao24))
+                    return;
+
                 // Open a new session
                 var now       = DateTimeOffset.UtcNow;
                 var sessionId = $"{f.Icao24}_{now:yyyyMMddHHmmss}";
@@ -133,6 +150,7 @@ public sealed class SqliteFlightTrajectoryService : IFlightTrajectoryService
                     StartedAt:  now);
 
                 _activeSessions[f.Icao24] = session;
+                _previouslyRecorded.Add(f.Icao24);
                 await PersistNewSessionAsync(session, flight, ct);
             }
 
@@ -165,9 +183,6 @@ public sealed class SqliteFlightTrajectoryService : IFlightTrajectoryService
         string icao24,
         CancellationToken ct = default)
     {
-        if (!_activeSessions.TryGetValue(icao24, out var session))
-            return Array.Empty<(double, double)>();
-
         using var conn = new SqliteConnection(_connectionString);
         await conn.OpenAsync(ct);
 
@@ -175,10 +190,44 @@ public sealed class SqliteFlightTrajectoryService : IFlightTrajectoryService
         cmd.CommandText = """
             SELECT Latitude, Longitude
             FROM   FlightTrajectoryPoints
-            WHERE  SessionId = @sessionId
+            WHERE  SessionId = (
+                SELECT SessionId FROM FlightTrackingSessions
+                WHERE  Icao24 = @icao24
+                ORDER  BY StartedAt DESC
+                LIMIT  1
+            )
             ORDER  BY RecordedAt ASC
             """;
-        cmd.Parameters.AddWithValue("@sessionId", session.SessionId);
+        cmd.Parameters.AddWithValue("@icao24", icao24);
+
+        var points = new List<(double, double)>();
+        using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+            points.Add((reader.GetDouble(0), reader.GetDouble(1)));
+
+        return points;
+    }
+
+    public async Task<IReadOnlyList<(double Lat, double Lon)>> GetRecordedPointsByCallsignAsync(
+        string callsign,
+        CancellationToken ct = default)
+    {
+        using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync(ct);
+
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT Latitude, Longitude
+            FROM   FlightTrajectoryPoints
+            WHERE  SessionId = (
+                SELECT SessionId FROM FlightTrackingSessions
+                WHERE  UPPER(Callsign) = UPPER(@callsign)
+                ORDER  BY StartedAt DESC
+                LIMIT  1
+            )
+            ORDER  BY RecordedAt ASC
+            """;
+        cmd.Parameters.AddWithValue("@callsign", callsign.Trim());
 
         var points = new List<(double, double)>();
         using var reader = await cmd.ExecuteReaderAsync(ct);

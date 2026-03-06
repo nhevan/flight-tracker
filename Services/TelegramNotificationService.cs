@@ -39,7 +39,8 @@ public sealed class TelegramNotificationService : ITelegramNotificationService
         double homeLon,
         double? previousHeading = null,
         IReadOnlyList<(double Lat, double Lon)>? trajectory = null,
-        bool isBeingRecorded = false)
+        bool isBeingRecorded = false,
+        IReadOnlyList<(double Lat, double Lon)>? recordedDots = null)
     {
         if (!_settings.Enabled
             || string.IsNullOrEmpty(_settings.BotToken)
@@ -57,7 +58,8 @@ public sealed class TelegramNotificationService : ITelegramNotificationService
                 flight.InferredHeadingDegrees,
                 f.BarometricAltitudeMeters, cancellationToken,
                 trajectory,
-                flight.PredictedPath?.Points);
+                flight.PredictedPath?.Points,
+                recordedDots);
 
             string apiUrl;
             HttpContent requestContent;
@@ -382,6 +384,48 @@ public sealed class TelegramNotificationService : ITelegramNotificationService
         if (!string.IsNullOrEmpty(info?.Operator)) parts.Add(info!.Operator);
 
         return parts.Count > 0 ? string.Join(" · ", parts) : "Unknown aircraft";
+    }
+
+    public async Task SendRecordedDotsMapAsync(
+        string callsign,
+        IReadOnlyList<(double Lat, double Lon)> dots,
+        CancellationToken cancellationToken)
+    {
+        if (!_settings.Enabled
+            || string.IsNullOrEmpty(_settings.BotToken)
+            || string.IsNullOrEmpty(_settings.ChatId))
+            return;
+
+        try
+        {
+            byte[]? mapBytes = await _mapService.GetDotsSnapshotAsync(callsign, dots, cancellationToken);
+            if (mapBytes is null)
+            {
+                await SendStatusAsync(
+                    $"🗺️ Could not generate map for <b>{EscapeHtml(callsign)}</b>.", cancellationToken);
+                return;
+            }
+
+            string caption = $"🗺️ Recorded trajectory for <b>{EscapeHtml(callsign)}</b> — {dots.Count} point{(dots.Count == 1 ? "" : "s")}";
+            string apiUrl  = $"https://api.telegram.org/bot{_settings.BotToken}/sendPhoto";
+
+            var form = new MultipartFormDataContent();
+            form.Add(new StringContent(_settings.ChatId), "chat_id");
+            form.Add(new ByteArrayContent(mapBytes),      "photo", "map.png");
+            form.Add(new StringContent(caption),          "caption");
+            form.Add(new StringContent("HTML"),           "parse_mode");
+
+            using var response = await _httpClient.PostAsync(apiUrl, form, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                string body = await response.Content.ReadAsStringAsync(cancellationToken);
+                Console.WriteLine($"[Telegram] SendRecordedDotsMapAsync {(int)response.StatusCode}: {body}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Telegram] SendRecordedDotsMapAsync error: {ex.Message}");
+        }
     }
 
     public async Task SendStatusAsync(string message, CancellationToken cancellationToken = default)

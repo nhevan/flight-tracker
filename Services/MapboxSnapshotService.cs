@@ -30,7 +30,8 @@ public sealed class MapboxSnapshotService : IMapSnapshotService
         double? altitudeMeters,
         CancellationToken cancellationToken,
         IReadOnlyList<(double Lat, double Lon)>? trajectory = null,
-        IReadOnlyList<(double Lat, double Lon)>? predictedPath = null)
+        IReadOnlyList<(double Lat, double Lon)>? predictedPath = null,
+        IReadOnlyList<(double Lat, double Lon)>? recordedDots = null)
     {
         if (!_settings.Enabled || string.IsNullOrWhiteSpace(_settings.AccessToken))
             return null;
@@ -54,7 +55,7 @@ public sealed class MapboxSnapshotService : IMapSnapshotService
             int    zoom     = _settings.ZoomOverride ?? DistanceToZoom(distToHomeKm);
             double halfKm   = ZoomToHalfTrajectoryKm(zoom);
             string overlays = BuildOverlays(lat.Value, lon.Value, _home.Latitude, _home.Longitude,
-                                            effectiveHeading, halfKm, trajectory, predictedPath);
+                                            effectiveHeading, halfKm, trajectory, predictedPath, recordedDots);
             string style    = string.IsNullOrWhiteSpace(_settings.Style) ? "mapbox/dark-v11" : _settings.Style;
 
             // Map is centred on HOME so the user sees the flight path relative to their location
@@ -171,9 +172,19 @@ public sealed class MapboxSnapshotService : IMapSnapshotService
         double? headingDegrees,
         double halfKm,
         IReadOnlyList<(double Lat, double Lon)>? trajectory = null,
-        IReadOnlyList<(double Lat, double Lon)>? predictedPath = null)
+        IReadOnlyList<(double Lat, double Lon)>? predictedPath = null,
+        IReadOnlyList<(double Lat, double Lon)>? recordedDots = null)
     {
         var ic = System.Globalization.CultureInfo.InvariantCulture;
+
+        // Purple dot pins for previously-recorded trajectory points (downsampled to ≤ 15)
+        string dotMarkers = string.Empty;
+        if (recordedDots is { Count: > 0 })
+        {
+            var sampled = DownsamplePath(recordedDots, maxPoints: 15);
+            dotMarkers = string.Join(",", sampled.Select(d =>
+                $"pin-s+cc44ff({d.Lon.ToString("F6", ic)},{d.Lat.ToString("F6", ic)})")) + ",";
+        }
 
         // Red airport pin — plane's current position
         string planeMarker = $"pin-s-airport+ff0000({planeLon.ToString("F6", ic)},{planeLat.ToString("F6", ic)})";
@@ -184,7 +195,7 @@ public sealed class MapboxSnapshotService : IMapSnapshotService
         // Defensive guard — GetSnapshotAsync already returns null when heading is null,
         // but kept here in case BuildOverlays is ever called directly.
         if (headingDegrees is null)
-            return $"{planeMarker},{homeMarker}";
+            return $"{dotMarkers}{planeMarker},{homeMarker}";
 
         // Project halfKm forward and backward along the plane's heading
         double headingRad = headingDegrees.Value * Math.PI / 180.0;
@@ -327,7 +338,74 @@ public sealed class MapboxSnapshotService : IMapSnapshotService
 
         string encodedGeoJson = Uri.EscapeDataString(geoJsonStr);
 
-        return $"{planeMarker},{homeMarker},geojson({encodedGeoJson})";
+        return $"{dotMarkers}{planeMarker},{homeMarker},geojson({encodedGeoJson})";
+    }
+
+    /// <inheritdoc/>
+    public async Task<byte[]?> GetDotsSnapshotAsync(
+        string callsign,
+        IReadOnlyList<(double Lat, double Lon)> dots,
+        CancellationToken cancellationToken)
+    {
+        if (!_settings.Enabled || string.IsNullOrWhiteSpace(_settings.AccessToken))
+            return null;
+
+        if (dots.Count == 0)
+            return null;
+
+        try
+        {
+            var ic = System.Globalization.CultureInfo.InvariantCulture;
+
+            // Centre on the centroid of all dot positions
+            double centLat = dots.Average(d => d.Lat);
+            double centLon = dots.Average(d => d.Lon);
+
+            // Determine zoom: find the max distance from centroid to any dot, then zoom to fit
+            double maxDistKm = dots.Max(d =>
+            {
+                double dlat = (d.Lat - centLat) * 111.0;
+                double dlon = (d.Lon - centLon) * 111.0 * Math.Cos(centLat * Math.PI / 180.0);
+                return Math.Sqrt(dlat * dlat + dlon * dlon);
+            });
+            int zoom = _settings.ZoomOverride ?? DistanceToZoom(Math.Max(maxDistKm * 1.5, 1.0));
+
+            // Build dot markers (downsampled to ≤ 15)
+            var sampled = DownsamplePath(dots, maxPoints: 15);
+            var parts = sampled.Select(d =>
+                $"pin-s+cc44ff({d.Lon.ToString("F6", ic)},{d.Lat.ToString("F6", ic)})")
+                .ToList();
+
+            // Home pin so the user sees context relative to their position
+            parts.Add($"pin-s-home+4499ff({_home.Longitude.ToString("F6", ic)},{_home.Latitude.ToString("F6", ic)})");
+
+            string overlays = string.Join(",", parts);
+            string style    = string.IsNullOrWhiteSpace(_settings.Style) ? "mapbox/dark-v11" : _settings.Style;
+
+            string url = $"https://api.mapbox.com/styles/v1/{style}/static" +
+                         $"/{overlays}" +
+                         $"/{centLon.ToString("F6", ic)},{centLat.ToString("F6", ic)}," +
+                         $"{zoom},{_settings.BearingOverride ?? 0}" +
+                         $"/{ImageWidth}x{ImageHeight}@2x" +
+                         $"?access_token={Uri.EscapeDataString(_settings.AccessToken)}";
+
+            Console.WriteLine($"[MapSnapshot/Dots] {callsign}: {dots.Count} pts, zoom {zoom}, URL: {url.Replace(_settings.AccessToken, "***")}");
+
+            Uri.TryCreate(url, new UriCreationOptions { DangerousDisablePathAndQueryCanonicalization = true }, out Uri? safeUri);
+            var response = await _httpClient.GetAsync(safeUri ?? new Uri(url), cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                string body = await response.Content.ReadAsStringAsync(cancellationToken);
+                Console.WriteLine($"[MapSnapshot/Dots] Mapbox error {(int)response.StatusCode}: {body}");
+                return null;
+            }
+            return await response.Content.ReadAsByteArrayAsync(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[MapSnapshot/Dots] Failed for {callsign}: {ex.Message}");
+            return null;
+        }
     }
 
     /// <summary>
