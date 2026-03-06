@@ -69,6 +69,9 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
         // Clear any stale webhook — Telegram forbids simultaneous webhook + long-polling (causes 409)
         await DeleteWebhookAsync(cancellationToken);
 
+        // Register all bot commands so Telegram shows the "/" autocomplete menu
+        await SetBotCommandsAsync(cancellationToken);
+
         long offset = 0;
         Console.WriteLine("[TelegramListener] Listening for commands (/stats, /spot, /spots, /range, /zoom, /alt, /rotate, /test, /plot, /record, /map)...");
 
@@ -203,6 +206,43 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
         catch (Exception ex)
         {
             Console.WriteLine($"[TelegramListener] Could not clear webhook: {ex.Message}");
+        }
+    }
+
+    private async Task SetBotCommandsAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var commands = new object[]
+            {
+                new { command = "stats",  description = "Show flight statistics for your location" },
+                new { command = "spot",   description = "Set observation spot — /spot <lat> <lon> [name]  or  /spot <name>" },
+                new { command = "spots",  description = "List all saved observation spots" },
+                new { command = "range",  description = "Set visual range in km — /range <km>  (0 = unlimited)" },
+                new { command = "zoom",   description = "Fix or reset map zoom — /zoom <1–22>  or  /zoom auto" },
+                new { command = "alt",    description = "Set max altitude filter in metres — /alt <100–15000>" },
+                new { command = "rotate", description = "Set map bearing — /rotate <0–359>  or  /rotate reset" },
+                new { command = "test",   description = "Send a test notification with a live flight" },
+                new { command = "plot",   description = "Plot live flight path on a map — /plot <callsign>" },
+                new { command = "record", description = "List all recorded Rotterdam flight trajectories" },
+                new { command = "map",    description = "Show recorded trajectory dots on a map — /map <callsign>" },
+            };
+
+            string url     = $"https://api.telegram.org/bot{_settings.BotToken}/setMyCommands";
+            var    payload = new { commands };
+            using var response = await _httpClient.PostAsJsonAsync(url, payload, cancellationToken);
+
+            if (response.IsSuccessStatusCode)
+                Console.WriteLine("[TelegramListener] Bot commands registered with Telegram.");
+            else
+            {
+                string body = await response.Content.ReadAsStringAsync(cancellationToken);
+                Console.WriteLine($"[TelegramListener] setMyCommands returned {(int)response.StatusCode}: {body}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[TelegramListener] Could not register bot commands: {ex.Message}");
         }
     }
 
