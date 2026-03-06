@@ -249,7 +249,7 @@ zoom - Set map zoom level (1-22) or auto
 alt - Set max altitude filter in metres
 rotate - Set map bearing in degrees (0-359) or reset
 test - Send a test flight notification
-plot - Plot a live flight by callsign (e.g. HV6992)
+plot - Show saved trajectory dots from DB: /plot <callsign>
 record - List all recorded Rotterdam flight trajectories
 map - Show recorded trajectory dots on a map: /map <callsign>
 ```
@@ -271,7 +271,7 @@ map - Show recorded trajectory dots on a map: /map <callsign>
 | `/rotate reset` | Revert to the default bearing (350° — 10° anti-clockwise) |
 | `/rotate` | Show the current bearing |
 | `/test` | Send a synthetic notification through the full pipeline to verify everything is wired up correctly |
-| `/plot <callsign>` | Look up a flight live, compute its predicted airway path, and send you the full notification with map (e.g. `/plot HV6992`) |
+| `/plot <callsign>` | Show the saved trajectory dots from the database for a recorded Rotterdam flight (e.g. `/plot HV6992`). Same as `/map` |
 | `/record` | List all recorded Rotterdam (EHRD/RTM) flight trajectories with callsign, route, point count, start time, and active/completed status |
 | `/map <callsign>` | Send a map image showing the recorded trajectory dots for a known Rotterdam flight (e.g. `/map HV6992`) |
 

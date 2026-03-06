@@ -525,80 +525,37 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
         {
             await SendMessageAsync(chatId,
                 "Usage: /plot &lt;callsign&gt;\nExample: /plot HV6992\n\n" +
-                "Looks up the flight live, computes its predicted path from Navigraph airways, " +
-                "and sends you the full notification with map.",
+                "Shows the saved trajectory dots from the database for a recorded Rotterdam flight.",
                 cancellationToken);
             return;
         }
 
-        string callsign = parts[1].Trim().ToUpperInvariant();
+        string callsign = parts[1].Trim();
+
+        await SendMessageAsync(chatId,
+            $"🔍 Looking up recorded trajectory for <b>{EscapeHtml(callsign)}</b>…",
+            cancellationToken);
 
         try
         {
-            await SendMessageAsync(chatId, $"⏳ Looking up <b>{EscapeHtml(callsign)}</b> in live feed…", cancellationToken);
-
-            // 1. Fetch live position from airplanes.live
-            FlightState? state = await _flightService.GetFlightByCallsignAsync(callsign, cancellationToken);
-            if (state is null)
+            var dots = await _trajectoryService.GetRecordedPointsByCallsignAsync(callsign, cancellationToken);
+            if (dots.Count == 0)
             {
                 await SendMessageAsync(chatId,
-                    $"❌ <b>{EscapeHtml(callsign)}</b> not found in live ADS-B data.\n" +
-                    "The flight may be on the ground, out of range, or not transmitting ADS-B.",
+                    $"❌ No recorded trajectory found for <b>{EscapeHtml(callsign)}</b>.\n" +
+                    "Use /record to see all flights with saved trajectories.",
                     cancellationToken);
                 return;
             }
 
-            // 2. Fetch route (origin/destination) from adsbdb
-            FlightRoute? route = await _routeService.GetRouteAsync(callsign, cancellationToken);
-
-            // 3. Build preliminary enriched state for path computation
-            var preliminary = new EnrichedFlightState(
-                State:         state,
-                Route:         route,
-                Aircraft:      null,
-                PhotoUrl:      null,
-                AircraftFacts: null,
-                PredictedPath: null);
-
-            // 4. Compute predicted path (clears cache for fresh result)
-            _predictedPathService.InvalidateCache(callsign);
-            var predictedPath = await _predictedPathService.GetPredictedPathAsync(preliminary, cancellationToken);
-
-            // 5. Assemble final enriched state
-            var flight = new EnrichedFlightState(
-                State:         state,
-                Route:         route,
-                Aircraft:      null,
-                PhotoUrl:      null,
-                AircraftFacts: null,
-                PredictedPath: predictedPath);
-
-            // 6. ETA to home location
-            double? etaSeconds = null;
-            if (state.DistanceKm.HasValue && state.VelocityMetersPerSecond is > 0)
-                etaSeconds = state.DistanceKm.Value * 1000.0 / state.VelocityMetersPerSecond.Value;
-
-            // 7. Send full notification (includes map with predicted path)
-            await _notificationService.NotifyAsync(
-                flight, "En Route", etaSeconds, visitorInfo: null, cancellationToken,
-                _homeLocation.Latitude, _homeLocation.Longitude);
-
-            string pathSummary = predictedPath is null
-                ? "⚠️ No path — missing route data"
-                : predictedPath.IsDirect
-                    ? "⚡ Direct path only (no airway matched)"
-                    : $"✅ {predictedPath.Points.Count} waypoints via airways";
-
-            string navLog = predictedPath?.NavDataLog ?? "Nav data: unavailable";
-            await SendMessageAsync(chatId,
-                $"✅ <b>{EscapeHtml(callsign)}</b> plotted! {pathSummary}\n\n" +
-                $"<pre>{EscapeHtml(navLog)}</pre>",
-                cancellationToken);
-            Console.WriteLine($"[TelegramListener] /plot {callsign}: {pathSummary}");
+            await _notificationService.SendRecordedDotsMapAsync(callsign, dots, cancellationToken);
+            Console.WriteLine($"[TelegramListener] /plot: sent {dots.Count} dots for {callsign}.");
         }
         catch (Exception ex)
         {
-            await SendMessageAsync(chatId, $"❌ Plot failed for <b>{EscapeHtml(callsign)}</b>: {EscapeHtml(ex.Message)}", cancellationToken);
+            await SendMessageAsync(chatId,
+                $"❌ Plot failed for <b>{EscapeHtml(callsign)}</b>: {EscapeHtml(ex.Message)}",
+                cancellationToken);
             Console.WriteLine($"[TelegramListener] /plot {callsign} error: {ex.Message}");
         }
     }
