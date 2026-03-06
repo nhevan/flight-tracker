@@ -13,7 +13,8 @@ public interface ITelegramNotificationService
                      RepeatVisitorInfo? visitorInfo, CancellationToken cancellationToken,
                      double homeLat, double homeLon,
                      double? previousHeading = null,
-                     IReadOnlyList<(double Lat, double Lon)>? trajectory = null);
+                     IReadOnlyList<(double Lat, double Lon)>? trajectory = null,
+                     bool isBeingRecorded = false);
 
     /// <summary>
     /// Sends a plain-text status message (startup notice, error alert, etc.).

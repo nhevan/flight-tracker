@@ -17,6 +17,12 @@ public sealed class AppSettings
     /// Default: "data/flight_stats.db"
     /// </summary>
     public string DatabasePath { get; set; } = "data/flight_stats.db";
+
+    /// <summary>
+    /// The airport whose arrivals and departures should have their flight path recorded.
+    /// Defaults to Rotterdam The Hague Airport (EHRD / RTM).
+    /// </summary>
+    public TrackedAirportSettings TrackedAirport { get; set; } = new();
 }
 
 public sealed class HomeLocationSettings
@@ -134,4 +140,20 @@ public sealed class MapboxSettings
     /// Set via /rotate command.
     /// </summary>
     public int? BearingOverride { get; set; }
+}
+
+
+public sealed class TrackedAirportSettings
+{
+    /// <summary>
+    /// ICAO code of the airport whose arrivals and departures are trajectory-recorded.
+    /// Default: "EHRD" (Rotterdam The Hague Airport).
+    /// </summary>
+    public string IcaoCode { get; set; } = "EHRD";
+
+    /// <summary>
+    /// IATA code of the same airport used as a fallback match.
+    /// Default: "RTM".
+    /// </summary>
+    public string IataCode { get; set; } = "RTM";
 }

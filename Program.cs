@@ -54,6 +54,7 @@ services.AddSingleton<IFlightEnrichmentService, FlightEnrichmentService>();
 services.AddSingleton<ITelegramNotificationService, TelegramNotificationService>();
 services.AddSingleton<IFlightLoggingService, SqliteFlightLoggingService>();
 services.AddSingleton<IRepeatVisitorService, RepeatVisitorService>();
+services.AddSingleton<IFlightTrajectoryService, SqliteFlightTrajectoryService>();
 services.AddSingleton<ITelegramCommandListener, TelegramCommandListener>();
 await using ServiceProvider provider = services.BuildServiceProvider();
 
@@ -62,6 +63,7 @@ var enrichmentService    = provider.GetRequiredService<IFlightEnrichmentService>
 var telegramService      = provider.GetRequiredService<ITelegramNotificationService>();
 var loggingService       = provider.GetRequiredService<IFlightLoggingService>();
 var repeatVisitorService = provider.GetRequiredService<IRepeatVisitorService>();
+var trajectoryService    = provider.GetRequiredService<IFlightTrajectoryService>();
 var commandListener      = provider.GetRequiredService<ITelegramCommandListener>();
 
 // ── Graceful shutdown (Ctrl+C and terminal close) ────────────────────────────
@@ -95,6 +97,7 @@ AppDomain.CurrentDomain.ProcessExit += (_, _) =>
 
 // ── Initialise database ───────────────────────────────────────────────────────
 await loggingService.InitialiseAsync(cts.Token);
+await trajectoryService.InitialiseAsync(cts.Token);
 
 // ── Startup notification ──────────────────────────────────────────────────────
 try
@@ -214,6 +217,36 @@ while (!cts.Token.IsCancellationRequested)
         foreach (var key in positionHistory.Keys.Except(currentIcaos).ToList())
             positionHistory.Remove(key);
 
+        // ── Trajectory recording: track Rotterdam arrivals and departures ─────
+        // Record a position point for each Rotterdam flight every poll cycle.
+        // Sessions are opened on first sight and closed when the flight leaves
+        // the visual range set via /range (AirplanesLiveService already filters
+        // those out, so they simply stop appearing in poll results).
+        var airport = settings.TrackedAirport;
+        foreach (var ef in enriched)
+        {
+            var route = ef.Route;
+            if (route is null) continue;
+
+            bool isArriving  = string.Equals(route.DestIcao,   airport.IcaoCode, StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(route.DestIata,   airport.IataCode, StringComparison.OrdinalIgnoreCase);
+            bool isDeparting = string.Equals(route.OriginIcao, airport.IcaoCode, StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(route.OriginIata, airport.IataCode, StringComparison.OrdinalIgnoreCase);
+
+            if (!isArriving && !isDeparting) continue;
+
+            string flightType = isArriving ? "Arriving" : "Departing";
+            await trajectoryService.StartOrContinueAsync(ef, flightType, cts.Token);
+        }
+
+        // Close sessions for flights that have left the visual range
+        foreach (var icao in trajectoryService.GetActiveIcaos()
+            .Where(icao => !currentIcaos.Contains(icao)).ToList())
+        {
+            await trajectoryService.CompleteSessionAsync(icao, cts.Token);
+        }
+
+
         // Telegram: notify and log when any flight is ≤ 2 minutes from overhead
         foreach (var ef in enriched)
         {
@@ -247,7 +280,8 @@ while (!cts.Token.IsCancellationRequested)
                 await telegramService.NotifyAsync(ef, dir ?? "Towards", etaSecs, visitorInfo, cts.Token,
                     homeLat, homeLon,
                     previousHeading: bearingChanged ? lastHeading : null,
-                    trajectory: trajectory);
+                    trajectory: trajectory,
+                    isBeingRecorded: trajectoryService.IsTracking(f.Icao24));
                 // Only log as a new visit for initial notifications — course-change re-notifications
                 // are part of the same overflight and must not inflate the visit counter.
                 if (!bearingChanged)

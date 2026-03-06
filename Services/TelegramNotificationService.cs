@@ -38,7 +38,8 @@ public sealed class TelegramNotificationService : ITelegramNotificationService
         double homeLat,
         double homeLon,
         double? previousHeading = null,
-        IReadOnlyList<(double Lat, double Lon)>? trajectory = null)
+        IReadOnlyList<(double Lat, double Lon)>? trajectory = null,
+        bool isBeingRecorded = false)
     {
         if (!_settings.Enabled
             || string.IsNullOrEmpty(_settings.BotToken)
@@ -48,7 +49,7 @@ public sealed class TelegramNotificationService : ITelegramNotificationService
         try
         {
             var f    = flight.State;
-            string text = BuildMessage(flight, direction, etaSeconds, visitorInfo, homeLat, homeLon, previousHeading);
+            string text = BuildMessage(flight, direction, etaSeconds, visitorInfo, homeLat, homeLon, previousHeading, isBeingRecorded);
 
             // 1️⃣ Try to get a live map snapshot (fetched server-side to keep token private)
             byte[]? mapBytes = await _mapService.GetSnapshotAsync(
@@ -143,7 +144,8 @@ public sealed class TelegramNotificationService : ITelegramNotificationService
         RepeatVisitorInfo? visitorInfo,
         double homeLat,
         double homeLon,
-        double? previousHeading = null)
+        double? previousHeading = null,
+        bool isBeingRecorded = false)
     {
         var f = ef.State;
 
@@ -214,6 +216,10 @@ public sealed class TelegramNotificationService : ITelegramNotificationService
             : $"{headerEmoji} <b>{callsignLink} — {directionDisplay}</b> | {etaStr}";
 
         sb.AppendLine(header);
+
+        // Recording indicator — shown when this flight's path is being saved
+        if (isBeingRecorded)
+            sb.AppendLine("🔴 <b>Recording trajectory</b>");
 
         // Emergency detail line
         if (isEmergency)
