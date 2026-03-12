@@ -191,9 +191,10 @@ public sealed class SqliteFlightTrajectoryService : IFlightTrajectoryService
             SELECT Latitude, Longitude
             FROM   FlightTrajectoryPoints
             WHERE  SessionId = (
-                SELECT SessionId FROM FlightTrackingSessions
-                WHERE  Icao24 = @icao24
-                ORDER  BY StartedAt DESC
+                SELECT SessionId FROM FlightTrackingSessions s
+                WHERE  s.Icao24 = @icao24
+                  AND  EXISTS (SELECT 1 FROM FlightTrajectoryPoints p WHERE p.SessionId = s.SessionId)
+                ORDER  BY s.StartedAt DESC
                 LIMIT  1
             )
             ORDER  BY RecordedAt ASC

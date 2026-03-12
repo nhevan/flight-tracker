@@ -39,13 +39,11 @@ public sealed class MapboxSnapshotService : IMapSnapshotService
         if (lat is null || lon is null)
             return null;
 
-        // Without any heading data the map shows no meaningful trajectory — skip it.
         // Fall back to the inferred heading (derived from GPS position delta) if available.
-        // Exception: if recordedDots from a previous DB session are available, proceed anyway —
-        // BuildOverlays handles the null-heading case by rendering just the stored path dots.
+        // BuildOverlays handles every heading/dots combination: if heading is null it renders
+        // dots-only (when present) or a plain position map (plane + home pins). Either is more
+        // useful than sending no map at all.
         double? effectiveHeading = headingDegrees ?? inferredHeadingDegrees;
-        if (effectiveHeading is null && recordedDots is not { Count: > 0 })
-            return null;
 
         try
         {
@@ -190,13 +188,11 @@ public sealed class MapboxSnapshotService : IMapSnapshotService
         // across zoom levels.  Clamped so dots are never invisible or huge.
         double dotRadiusKm = Math.Clamp(halfKm * 0.02, 0.08, 0.25);
 
-        // Defensive guard — GetSnapshotAsync already returns null when heading is null,
-        // but kept here in case BuildOverlays is ever called directly.
         if (headingDegrees is null)
         {
             if (recordedDots is { Count: > 0 })
             {
-                var dotFeatures = BuildDotFeatures(recordedDots, dotRadiusKm, maxDots: 8);
+                var dotFeatures = BuildDotFeatures(recordedDots, dotRadiusKm, maxDots: 3);
                 var dotGeoJson  = new JsonObject { ["type"] = "FeatureCollection", ["features"] = dotFeatures };
                 return $"{planeMarker},{homeMarker},geojson({Uri.EscapeDataString(dotGeoJson.ToJsonString())})";
             }
@@ -334,10 +330,11 @@ public sealed class MapboxSnapshotService : IMapSnapshotService
         }
 
         // Purple filled circles for previously-recorded trajectory dots.
-        // Downsampled to ≤ 8 to keep the encoded GeoJSON within Mapbox URL limits.
+        // Capped at 3 dots with 4-vertex polygons to keep the encoded GeoJSON well under
+        // the Mapbox Static API 8,192-char URL limit, even when a predicted path is also present.
         if (recordedDots is { Count: > 0 })
         {
-            foreach (var feature in BuildDotFeatures(recordedDots, dotRadiusKm, maxDots: 8))
+            foreach (var feature in BuildDotFeatures(recordedDots, dotRadiusKm, maxDots: 3))
                 features.Add(feature);
         }
 
@@ -464,7 +461,7 @@ public sealed class MapboxSnapshotService : IMapSnapshotService
     /// </summary>
     private static JsonArray BuildCircleRing(double centerLat, double centerLon, double radiusKm)
     {
-        const int Points = 8;
+        const int Points = 4;
         double cosLat = Math.Cos(centerLat * Math.PI / 180.0);
         var ring = new JsonArray();
         for (int i = 0; i <= Points; i++)
