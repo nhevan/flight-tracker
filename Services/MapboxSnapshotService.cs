@@ -41,8 +41,10 @@ public sealed class MapboxSnapshotService : IMapSnapshotService
 
         // Without any heading data the map shows no meaningful trajectory — skip it.
         // Fall back to the inferred heading (derived from GPS position delta) if available.
+        // Exception: if recordedDots from a previous DB session are available, proceed anyway —
+        // BuildOverlays handles the null-heading case by rendering just the stored path dots.
         double? effectiveHeading = headingDegrees ?? inferredHeadingDegrees;
-        if (effectiveHeading is null)
+        if (effectiveHeading is null && recordedDots is not { Count: > 0 })
             return null;
 
         try
