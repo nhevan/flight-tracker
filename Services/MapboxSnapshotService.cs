@@ -328,10 +328,28 @@ public sealed class MapboxSnapshotService : IMapSnapshotService
         }
 
         // Purple Simplestyle point markers for previously-recorded trajectory dots.
+        // NOTE: must create each JsonObject fresh inside features.Add() — iterating over
+        // a JsonArray and adding its elements to another JsonArray throws
+        // "The node already has a parent" because JsonNode children are owned by their array.
         if (recordedDots is { Count: > 0 })
         {
-            foreach (var feature in BuildDotFeatures(recordedDots, maxDots: 3))
-                features.Add(feature);
+            foreach (var (lat, lon) in DownsamplePath(recordedDots, maxPoints: 3))
+            {
+                features.Add(new JsonObject
+                {
+                    ["type"] = "Feature",
+                    ["geometry"] = new JsonObject
+                    {
+                        ["type"]        = "Point",
+                        ["coordinates"] = new JsonArray { lon, lat }
+                    },
+                    ["properties"] = new JsonObject
+                    {
+                        ["marker-color"] = "#cc44ff",
+                        ["marker-size"]  = "small"
+                    }
+                });
+            }
         }
 
         var geoJson = new JsonObject
