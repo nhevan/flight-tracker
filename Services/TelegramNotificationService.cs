@@ -64,6 +64,13 @@ public sealed class TelegramNotificationService : ITelegramNotificationService
             string apiUrl;
             HttpContent requestContent;
 
+            if (_settings.DebugMapStatus)
+            {
+                string mapStatus   = mapBytes is not null ? $"✅ {mapBytes.Length}B" : "❌ null";
+                string photoStatus = !string.IsNullOrEmpty(flight.PhotoUrl) ? "✅ photo" : "❌ none";
+                text += $"\n━━━━━━━\n🗺 {mapStatus}  📷 {photoStatus}";
+            }
+
             string truncatedText = text.Length > TelegramCaptionLimit
                 ? text[..(TelegramCaptionLimit - 1)] + "…"
                 : text;

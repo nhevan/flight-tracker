@@ -67,7 +67,7 @@ public sealed class MapboxSnapshotService : IMapSnapshotService
                          $"/{ImageWidth}x{ImageHeight}@2x" +
                          $"?access_token={Uri.EscapeDataString(_settings.AccessToken)}";
 
-            Console.WriteLine($"[MapSnapshot] URL: {url.Replace(_settings.AccessToken, "***")}");
+            Console.WriteLine($"[MapSnapshot] URL: {url.Replace(_settings.AccessToken, "***")} ({url.Length} chars)");
 
             // Use DangerousDisablePathAndQueryCanonicalization so the .NET Uri class does not
             // decode percent-encoded characters (e.g. %2C → ,) in the path segment that
@@ -82,7 +82,9 @@ public sealed class MapboxSnapshotService : IMapSnapshotService
                 Console.WriteLine($"[MapSnapshot] Mapbox error {(int)response.StatusCode}: {body}");
                 return null;
             }
-            return await response.Content.ReadAsByteArrayAsync(cancellationToken);
+            var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+            Console.WriteLine($"[MapSnapshot] Success: {bytes.Length} bytes");
+            return bytes;
         }
         catch (Exception ex)
         {

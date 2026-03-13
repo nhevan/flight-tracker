@@ -86,6 +86,13 @@ public sealed class TelegramSettings
     /// Set to a low value (e.g. 1) during local testing. Default: 30 minutes.
     /// </summary>
     public int ErrorNotificationSnoozeMinutes { get; set; } = 30;
+
+    /// <summary>
+    /// When true, appends a compact debug line to every notification showing map-generation
+    /// status and which Telegram API method was used.  Enable temporarily to diagnose missing
+    /// maps; leave false in normal operation.
+    /// </summary>
+    public bool DebugMapStatus { get; set; } = false;
 }
 
 public sealed class AnthropicSettings
