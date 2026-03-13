@@ -184,15 +184,11 @@ public sealed class MapboxSnapshotService : IMapSnapshotService
         // Blue home pin — shown at the map centre so the user can see their reference point
         string homeMarker = $"pin-s-home+4499ff({homeLon.ToString("F6", ic)},{homeLat.ToString("F6", ic)})";
 
-        // Dot circle radius scales with the trajectory half-length so it looks consistent
-        // across zoom levels.  Clamped so dots are never invisible or huge.
-        double dotRadiusKm = Math.Clamp(halfKm * 0.02, 0.08, 0.25);
-
         if (headingDegrees is null)
         {
             if (recordedDots is { Count: > 0 })
             {
-                var dotFeatures = BuildDotFeatures(recordedDots, dotRadiusKm, maxDots: 3);
+                var dotFeatures = BuildDotFeatures(recordedDots, maxDots: 3);
                 var dotGeoJson  = new JsonObject { ["type"] = "FeatureCollection", ["features"] = dotFeatures };
                 return $"{planeMarker},{homeMarker},geojson({Uri.EscapeDataString(dotGeoJson.ToJsonString())})";
             }
@@ -329,12 +325,10 @@ public sealed class MapboxSnapshotService : IMapSnapshotService
             });
         }
 
-        // Purple filled circles for previously-recorded trajectory dots.
-        // Capped at 3 dots with 4-vertex polygons to keep the encoded GeoJSON well under
-        // the Mapbox Static API 8,192-char URL limit, even when a predicted path is also present.
+        // Purple Simplestyle point markers for previously-recorded trajectory dots.
         if (recordedDots is { Count: > 0 })
         {
-            foreach (var feature in BuildDotFeatures(recordedDots, dotRadiusKm, maxDots: 3))
+            foreach (var feature in BuildDotFeatures(recordedDots, maxDots: 3))
                 features.Add(feature);
         }
 
@@ -381,12 +375,8 @@ public sealed class MapboxSnapshotService : IMapSnapshotService
             });
             int zoom = _settings.ZoomOverride ?? DistanceToZoom(Math.Max(maxDistKm * 1.5, 1.0));
 
-            // Dot radius scales with the zoom level so circles look consistent across all views
-            double halfKm      = ZoomToHalfTrajectoryKm(zoom);
-            double dotRadiusKm = Math.Clamp(halfKm * 0.02, 0.08, 0.25);
-
-            // Build GeoJSON FeatureCollection with one filled circle per dot (downsampled to ≤ 15)
-            var dotFeatures = BuildDotFeatures(dots, dotRadiusKm, maxDots: 15);
+            // Build GeoJSON FeatureCollection with one point marker per dot (downsampled to ≤ 15)
+            var dotFeatures = BuildDotFeatures(dots, maxDots: 15);
             var geoJson     = new JsonObject { ["type"] = "FeatureCollection", ["features"] = dotFeatures };
             string encodedGeoJson = Uri.EscapeDataString(geoJson.ToJsonString());
 
@@ -423,11 +413,11 @@ public sealed class MapboxSnapshotService : IMapSnapshotService
     }
 
     /// <summary>
-    /// Builds a JsonArray of GeoJSON Feature objects, each a small filled circle polygon
+    /// Builds a JsonArray of GeoJSON Feature objects, each a Simplestyle point marker
     /// representing one recorded trajectory dot.  Downsampled to <paramref name="maxDots"/> points.
     /// </summary>
     private static JsonArray BuildDotFeatures(
-        IReadOnlyList<(double Lat, double Lon)> dots, double radiusKm, int maxDots)
+        IReadOnlyList<(double Lat, double Lon)> dots, int maxDots)
     {
         var features = new JsonArray();
         var sampled  = DownsamplePath(dots, maxDots);
@@ -436,42 +426,19 @@ public sealed class MapboxSnapshotService : IMapSnapshotService
             features.Add(new JsonObject
             {
                 ["type"] = "Feature",
-                ["properties"] = new JsonObject
-                {
-                    ["fill"]           = "#cc44ff",
-                    ["fill-opacity"]   = 0.85,
-                    ["stroke"]         = "#cc44ff",
-                    ["stroke-width"]   = 1,
-                    ["stroke-opacity"] = 0.9
-                },
                 ["geometry"] = new JsonObject
                 {
-                    ["type"]        = "Polygon",
-                    ["coordinates"] = new JsonArray { BuildCircleRing(lat, lon, radiusKm) }
+                    ["type"]        = "Point",
+                    ["coordinates"] = new JsonArray { lon, lat }
+                },
+                ["properties"] = new JsonObject
+                {
+                    ["marker-color"] = "#cc44ff",
+                    ["marker-size"]  = "small"
                 }
             });
         }
         return features;
-    }
-
-    /// <summary>
-    /// Returns a GeoJSON outer ring (closed polygon) approximating a circle of
-    /// <paramref name="radiusKm"/> km at <paramref name="centerLat"/>, <paramref name="centerLon"/>.
-    /// Uses 8 evenly-spaced points plus a closing repeat of the first point.
-    /// </summary>
-    private static JsonArray BuildCircleRing(double centerLat, double centerLon, double radiusKm)
-    {
-        const int Points = 4;
-        double cosLat = Math.Cos(centerLat * Math.PI / 180.0);
-        var ring = new JsonArray();
-        for (int i = 0; i <= Points; i++)
-        {
-            double angle = 2.0 * Math.PI * i / Points;
-            double lat   = centerLat + (radiusKm / 111.0) * Math.Cos(angle);
-            double lon   = centerLon + (radiusKm / 111.0) * Math.Sin(angle) / cosLat;
-            ring.Add(new JsonArray { lon, lat });   // GeoJSON: [lon, lat]
-        }
-        return ring;
     }
 
     /// <summary>

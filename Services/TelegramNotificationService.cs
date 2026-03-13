@@ -68,11 +68,14 @@ public sealed class TelegramNotificationService : ITelegramNotificationService
                 ? text[..(TelegramCaptionLimit - 1)] + "…"
                 : text;
 
+            bool triedMediaGroup = false;
+
             if (mapBytes is not null && !string.IsNullOrEmpty(flight.PhotoUrl))
             {
                 // Both map and aircraft photo — send as a 2-photo album via sendMediaGroup.
                 // Caption goes on the first item (the map); aircraft photo is second, captionless.
                 apiUrl = $"https://api.telegram.org/bot{_settings.BotToken}/sendMediaGroup";
+                triedMediaGroup = true;
 
                 var mediaArray = System.Text.Json.JsonSerializer.Serialize(new object[]
                 {
@@ -130,6 +133,25 @@ public sealed class TelegramNotificationService : ITelegramNotificationService
             {
                 string body = await response.Content.ReadAsStringAsync(cancellationToken);
                 Console.WriteLine($"[Telegram] Warning: {(int)response.StatusCode} — {body}");
+
+                // If sendMediaGroup failed, fall back to map-only sendPhoto so the map
+                // is never permanently lost due to a stale or unavailable aircraft photo URL.
+                if (triedMediaGroup)
+                {
+                    var fallbackForm = new MultipartFormDataContent();
+                    fallbackForm.Add(new StringContent(_settings.ChatId), "chat_id");
+                    fallbackForm.Add(new ByteArrayContent(mapBytes!),     "photo", "map.png");
+                    fallbackForm.Add(new StringContent(truncatedText),    "caption");
+                    fallbackForm.Add(new StringContent("HTML"),           "parse_mode");
+
+                    string fallbackUrl = $"https://api.telegram.org/bot{_settings.BotToken}/sendPhoto";
+                    using var fallbackResponse = await _httpClient.PostAsync(fallbackUrl, fallbackForm, cancellationToken);
+                    if (!fallbackResponse.IsSuccessStatusCode)
+                    {
+                        string fallbackBody = await fallbackResponse.Content.ReadAsStringAsync(cancellationToken);
+                        Console.WriteLine($"[Telegram] Fallback sendPhoto also failed: {(int)fallbackResponse.StatusCode} — {fallbackBody}");
+                    }
+                }
             }
         }
         catch (Exception ex)
