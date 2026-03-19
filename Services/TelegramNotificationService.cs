@@ -80,14 +80,14 @@ public sealed class TelegramNotificationService : ITelegramNotificationService
             if (mapBytes is not null && !string.IsNullOrEmpty(flight.PhotoUrl))
             {
                 // Both map and aircraft photo — send as a 2-photo album via sendMediaGroup.
-                // Caption goes on the first item (the map); aircraft photo is second, captionless.
+                // Caption goes on the first item (the aircraft photo); map is second, captionless.
                 apiUrl = $"https://api.telegram.org/bot{_settings.BotToken}/sendMediaGroup";
                 triedMediaGroup = true;
 
                 var mediaArray = System.Text.Json.JsonSerializer.Serialize(new object[]
                 {
-                    new { type = "photo", media = "attach://map", caption = truncatedText, parse_mode = "HTML" },
-                    new { type = "photo", media = flight.PhotoUrl }
+                    new { type = "photo", media = flight.PhotoUrl, caption = truncatedText, parse_mode = "HTML" },
+                    new { type = "photo", media = "attach://map" }
                 });
 
                 var form = new MultipartFormDataContent();
