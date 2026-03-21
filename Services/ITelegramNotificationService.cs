@@ -15,7 +15,8 @@ public interface ITelegramNotificationService
                      double? previousHeading = null,
                      IReadOnlyList<(double Lat, double Lon)>? trajectory = null,
                      bool isBeingRecorded = false,
-                     IReadOnlyList<(double Lat, double Lon)>? recordedDots = null);
+                     IReadOnlyList<(double Lat, double Lon)>? recordedDots = null,
+                     bool isCourseChange = false);
 
     /// <summary>
     /// Sends a map photo to the chat showing previously-recorded trajectory dots for
