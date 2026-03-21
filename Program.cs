@@ -284,7 +284,8 @@ while (!cts.Token.IsCancellationRequested)
                     previousHeading: bearingChanged ? lastHeading : null,
                     trajectory: trajectory,
                     isBeingRecorded: trajectoryService.IsTracking(f.Icao24),
-                    recordedDots: recordedDots.Count > 0 ? recordedDots : null);
+                    recordedDots: recordedDots.Count > 0 ? recordedDots : null,
+                    isCourseChange: bearingChanged);
                 // Only log as a new visit for initial notifications — course-change re-notifications
                 // are part of the same overflight and must not inflate the visit counter.
                 if (!bearingChanged)

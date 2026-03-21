@@ -40,7 +40,8 @@ public sealed class TelegramNotificationService : ITelegramNotificationService
         double? previousHeading = null,
         IReadOnlyList<(double Lat, double Lon)>? trajectory = null,
         bool isBeingRecorded = false,
-        IReadOnlyList<(double Lat, double Lon)>? recordedDots = null)
+        IReadOnlyList<(double Lat, double Lon)>? recordedDots = null,
+        bool isCourseChange = false)
     {
         if (!_settings.Enabled
             || string.IsNullOrEmpty(_settings.BotToken)
@@ -50,7 +51,7 @@ public sealed class TelegramNotificationService : ITelegramNotificationService
         try
         {
             var f    = flight.State;
-            string text = BuildMessage(flight, direction, etaSeconds, visitorInfo, homeLat, homeLon, previousHeading, isBeingRecorded);
+            string text = BuildMessage(flight, direction, etaSeconds, visitorInfo, homeLat, homeLon, previousHeading, isBeingRecorded, isCourseChange);
 
             // 1️⃣ Try to get a live map snapshot (fetched server-side to keep token private)
             byte[]? mapBytes = await _mapService.GetSnapshotAsync(
@@ -176,7 +177,8 @@ public sealed class TelegramNotificationService : ITelegramNotificationService
         double homeLat,
         double homeLon,
         double? previousHeading = null,
-        bool isBeingRecorded = false)
+        bool isBeingRecorded = false,
+        bool isCourseChange = false)
     {
         var f = ef.State;
 
@@ -204,23 +206,28 @@ public sealed class TelegramNotificationService : ITelegramNotificationService
         }
 
         // ── Repeat visitor banner (prepended before everything else) ─────────
-        // Use registration for a friendlier display name; fall back to ICAO24 hex.
-        string displayIdent = !string.IsNullOrEmpty(ef.Aircraft?.Registration)
-            ? ef.Aircraft!.Registration!
-            : f.Icao24;
+        // Skipped for course-change re-notifications — those are part of the same
+        // overflight, not a new visit, so showing a visitor banner would be wrong.
+        if (!isCourseChange)
+        {
+            // Use registration for a friendlier display name; fall back to ICAO24 hex.
+            string displayIdent = !string.IsNullOrEmpty(ef.Aircraft?.Registration)
+                ? ef.Aircraft!.Registration!
+                : f.Icao24;
 
-        if (visitorInfo is not null)
-        {
-            string relTime = FormatRelativeTime(visitorInfo.LastSeenAt);
-            string destHint = !string.IsNullOrEmpty(visitorInfo.LastDestIata)
-                ? $" heading to {visitorInfo.LastDestIata}"
-                : string.Empty;
-            int visitNumber = visitorInfo.TotalPreviousSightings + 1;
-            sb.AppendLine($"🔁 Welcome back! {EscapeHtml(displayIdent)} was last seen {relTime}{EscapeHtml(destHint)}. This is visit #{visitNumber}!");
-        }
-        else
-        {
-            sb.AppendLine($"👋 First time spotting this aircraft!");
+            if (visitorInfo is not null)
+            {
+                string relTime = FormatRelativeTime(visitorInfo.LastSeenAt);
+                string destHint = !string.IsNullOrEmpty(visitorInfo.LastDestIata)
+                    ? $" heading to {visitorInfo.LastDestIata}"
+                    : string.Empty;
+                int visitNumber = visitorInfo.TotalPreviousSightings + 1;
+                sb.AppendLine($"🔁 Welcome back! {EscapeHtml(displayIdent)} was last seen {relTime}{EscapeHtml(destHint)}. This is visit #{visitNumber}!");
+            }
+            else
+            {
+                sb.AppendLine($"👋 First time spotting this aircraft!");
+            }
         }
 
         // ── Header line ──────────────────────────────────────────────────────
