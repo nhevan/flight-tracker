@@ -96,6 +96,15 @@ setup_config() {
         read -r -s -p "  AeroAPI Key: " fa_key; echo ""
     fi
 
+    echo ""
+    echo "SSE streaming endpoint"
+    read -r -s -p "  Bearer token (leave blank to auto-generate): " sse_token; echo ""
+    if [[ -z "$sse_token" ]]; then
+        sse_token=$(openssl rand -hex 24)
+        echo "  Generated token: $sse_token"
+        echo "  (save this — you will need it in your Python UI)"
+    fi
+
     cat > "$config_path" <<JSON
 {
   "DatabasePath": "$DATA_DIR/flight_stats.db",
@@ -132,6 +141,10 @@ setup_config() {
   "FlightAware": {
     "Enabled": $fa_enabled,
     "ApiKey": "$fa_key"
+  },
+  "Sse": {
+    "Enabled": true,
+    "BearerToken": "$sse_token"
   }
 }
 JSON

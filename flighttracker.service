@@ -7,6 +7,7 @@ Wants=network-online.target
 Type=simple
 WorkingDirectory=/opt/flighttracker/app
 ExecStart=/usr/bin/dotnet /opt/flighttracker/app/flightTracker.dll
+Environment=ASPNETCORE_URLS=http://localhost:5000
 Restart=always
 RestartSec=15
 StartLimitIntervalSec=0

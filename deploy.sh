@@ -69,6 +69,15 @@ setup_config() {
         read -r -s -p "  AeroAPI Key: " fa_key; echo ""
     fi
 
+    echo ""
+    echo "SSE streaming endpoint"
+    read -r -s -p "  Bearer token (leave blank to auto-generate): " sse_token; echo ""
+    if [[ -z "$sse_token" ]]; then
+        sse_token=$(openssl rand -hex 24)
+        echo "  Generated token: $sse_token"
+        echo "  (save this — you will need it in your Python UI)"
+    fi
+
     # Write JSON to a local temp file then SCP — avoids heredoc quoting issues
     # with secrets that may contain special shell characters.
     tmp=$(mktemp /tmp/flighttracker-XXXXXX.json)
@@ -106,6 +115,10 @@ setup_config() {
   "FlightAware": {
     "Enabled": $fa_enabled,
     "ApiKey": "$fa_key"
+  },
+  "Sse": {
+    "Enabled": true,
+    "BearerToken": "$sse_token"
   }
 }
 JSON

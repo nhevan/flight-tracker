@@ -23,6 +23,7 @@ public sealed class AppSettings
     /// Defaults to Rotterdam The Hague Airport (EHRD / RTM).
     /// </summary>
     public TrackedAirportSettings TrackedAirport { get; set; } = new();
+    public SseSettings Sse { get; set; } = new();
 }
 
 public sealed class HomeLocationSettings
@@ -149,6 +150,18 @@ public sealed class MapboxSettings
     public int? BearingOverride { get; set; }
 }
 
+
+public sealed class SseSettings
+{
+    /// <summary>Set to true to expose the SSE /events endpoint.</summary>
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>
+    /// Static bearer token clients must supply in the Authorization header.
+    /// Leave empty to disable auth (not recommended in production).
+    /// </summary>
+    public string BearerToken { get; set; } = string.Empty;
+}
 
 public sealed class TrackedAirportSettings
 {

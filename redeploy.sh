@@ -63,6 +63,13 @@ elif grep -q 'your_client_id\|YOUR_' "$CONFIG" 2>/dev/null; then
     echo "   Run ./ec2-setup.sh to set up your credentials."
 fi
 
+if [[ -f "$CONFIG" ]] && ! grep -q '"Sse"' "$CONFIG" 2>/dev/null; then
+    echo ""
+    echo "⚠️  appsettings.json is missing the \"Sse\" section — SSE /flight-tracker/events won't auth correctly."
+    echo "   Add this to $CONFIG and restart:"
+    echo '   "Sse": { "Enabled": true, "BearerToken": "your-secret-token" }'
+fi
+
 # ── 5. Update and restart service ────────────────────────────────────────────
 
 step "Updating and restarting flighttracker..."
