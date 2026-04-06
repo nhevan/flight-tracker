@@ -56,7 +56,7 @@ public sealed class HomeLocationSettings
 
 public sealed class PollingSettings
 {
-    public int IntervalSeconds { get; set; } = 15;
+    public int IntervalSeconds { get; set; } = 35;
 }
 
 public sealed class AirplanesLiveSettings
