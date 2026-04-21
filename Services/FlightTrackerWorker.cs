@@ -186,7 +186,8 @@ public sealed class FlightTrackerWorker(
 
                         // Broadcast to SSE clients
                         if (settings.Sse.Enabled && sseBroadcaster.ClientCount > 0)
-                            sseBroadcaster.Broadcast(BuildSseEvent(ef, dir ?? "Towards", etaSecs, bearingChanged));
+                            sseBroadcaster.Broadcast(BuildSseEvent(ef, dir ?? "Towards", etaSecs, bearingChanged,
+                                homeLat, homeLon, settings.HomeLocation.Name));
 
                         if (!bearingChanged)
                             await loggingService.LogAsync(ef, dir ?? "Towards", etaSecs,
@@ -243,7 +244,10 @@ public sealed class FlightTrackerWorker(
         EnrichedFlightState ef,
         string direction,
         double? etaSeconds,
-        bool isCourseChange)
+        bool isCourseChange,
+        double homeLat,
+        double homeLon,
+        string? homeName)
     {
         var f    = ef.State;
         var info = ef.Aircraft;
@@ -301,6 +305,9 @@ public sealed class FlightTrackerWorker(
             WindSpeedKnots:            f.WindSpeedKnots,
             WindDirectionDeg:          f.WindDirectionDeg,
             OutsideAirTempC:           f.OutsideAirTempC,
+            HomeLat:                   homeLat,
+            HomeLon:                   homeLon,
+            HomeName:                  homeName,
             Timestamp:                 DateTimeOffset.UtcNow
         );
     }

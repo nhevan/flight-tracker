@@ -116,6 +116,11 @@ The JSON body is a single flat object (all keys camelCase). See the schema below
   "windDirectionDeg": 250.0,
   "outsideAirTempC": -18.5,
 
+  // Tracking location — the configured home/spotting position
+  "homeLat": 51.9244,
+  "homeLon": 4.4777,
+  "homeName": "Home",              // optional label, null when not configured
+
   // Timestamp
   "timestamp": "2026-04-21T14:32:01+00:00"  // ISO 8601, always UTC
 }

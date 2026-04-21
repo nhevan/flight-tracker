@@ -74,6 +74,11 @@ public sealed record FlightSseEvent(
     double? WindDirectionDeg,
     double? OutsideAirTempC,
 
+    // ── Tracking location ─────────────────────────────────────────────────────
+    double  HomeLat,
+    double  HomeLon,
+    string? HomeName,              // optional human-readable label e.g. "Home" or "Roof terrace"
+
     // ── Timestamp ─────────────────────────────────────────────────────────────
     DateTimeOffset Timestamp
 );
