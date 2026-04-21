@@ -78,11 +78,15 @@ The JSON body is a single flat object (all keys camelCase). See the schema below
   "originIata": "AMS",
   "originIcao": "EHAM",
   "originName": "Amsterdam Airport Schiphol",
+  "originCity": "Amsterdam",        // municipality name, nullable
+  "originCountry": "Netherlands",   // nullable
   "originLat": 52.3086,             // decimal degrees, nullable
   "originLon": 4.7639,              // decimal degrees, nullable
   "destIata": "LHR",
   "destIcao": "EGLL",
   "destName": "Heathrow Airport",
+  "destCity": "London",             // municipality name, nullable
+  "destCountry": "United Kingdom",  // nullable
   "destLat": 51.4775,               // decimal degrees, nullable
   "destLon": -0.4614,               // decimal degrees, nullable
   "routeDistanceKm": 370.2,         // great-circle distance between airports (Haversine), nullable

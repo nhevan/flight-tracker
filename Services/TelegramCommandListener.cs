@@ -593,9 +593,11 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
             var route = new FlightRoute(
                 OriginIcao: "EHRD", OriginIata: "RTM",
                 OriginName: "Rotterdam The Hague Airport",
+                OriginCity: "Rotterdam", OriginCountry: "Netherlands",
                 OriginLat:  51.957, OriginLon: 4.437,
                 DestIcao:   "LEBL", DestIata:  "BCN",
                 DestName:   "El Prat Airport (Barcelona)",
+                DestCity:   "Barcelona", DestCountry: "Spain",
                 DestLat:    41.297, DestLon:   2.078,
                 RouteDistanceKm: 1199);
 
