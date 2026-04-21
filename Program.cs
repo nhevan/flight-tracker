@@ -100,12 +100,16 @@ app.MapGet("/flight-tracker/events", async (HttpContext ctx, SseBroadcaster broa
 
     var sub        = broadcaster.SubscribeAsync(ct);
     var enumerator = sub.GetAsyncEnumerator(ct);
+    // Declared outside try so the finally can await it before disposing.
+    // Calling DisposeAsync() while MoveNextAsync() is still in-flight causes
+    // NotSupportedException because the iterator state machine is still running.
+    Task<bool>? moveNext = null;
     try
     {
         // Interleave SSE data events with keepalive comment lines so the
         // connection stays alive through idle periods (Caddy's read timeout).
-        using var ping    = new PeriodicTimer(TimeSpan.FromSeconds(25));
-        var moveNext = enumerator.MoveNextAsync().AsTask();
+        using var ping = new PeriodicTimer(TimeSpan.FromSeconds(25));
+        moveNext = enumerator.MoveNextAsync().AsTask();
         var waitPing = ping.WaitForNextTickAsync(ct).AsTask();
 
         while (!ct.IsCancellationRequested)
@@ -131,6 +135,10 @@ app.MapGet("/flight-tracker/events", async (HttpContext ctx, SseBroadcaster broa
     catch (OperationCanceledException) { /* client disconnected — normal */ }
     finally
     {
+        // Wait for any in-flight MoveNextAsync to finish before disposing,
+        // so the iterator state machine is no longer running when DisposeAsync runs.
+        if (moveNext != null)
+            try { await moveNext; } catch { }
         await enumerator.DisposeAsync();
     }
 });
