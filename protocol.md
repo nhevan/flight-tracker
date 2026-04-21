@@ -120,6 +120,7 @@ The JSON body is a single flat object (all keys camelCase). See the schema below
   "homeLat": 51.9244,
   "homeLon": 4.4777,
   "homeName": "Home",              // optional label, null when not configured
+  "visualRangeKm": 50.0,           // configured tracking radius in km
 
   // Timestamp
   "timestamp": "2026-04-21T14:32:01+00:00"  // ISO 8601, always UTC

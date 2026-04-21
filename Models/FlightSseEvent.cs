@@ -78,6 +78,7 @@ public sealed record FlightSseEvent(
     double  HomeLat,
     double  HomeLon,
     string? HomeName,              // optional human-readable label e.g. "Home" or "Roof terrace"
+    double  VisualRangeKm,         // configured tracking radius in km
 
     // ── Timestamp ─────────────────────────────────────────────────────────────
     DateTimeOffset Timestamp

@@ -187,7 +187,7 @@ public sealed class FlightTrackerWorker(
                         // Broadcast to SSE clients
                         if (settings.Sse.Enabled && sseBroadcaster.ClientCount > 0)
                             sseBroadcaster.Broadcast(BuildSseEvent(ef, dir ?? "Towards", etaSecs, bearingChanged,
-                                homeLat, homeLon, settings.HomeLocation.Name));
+                                homeLat, homeLon, settings.HomeLocation.Name, settings.HomeLocation.VisualRangeKm));
 
                         if (!bearingChanged)
                             await loggingService.LogAsync(ef, dir ?? "Towards", etaSecs,
@@ -247,7 +247,8 @@ public sealed class FlightTrackerWorker(
         bool isCourseChange,
         double homeLat,
         double homeLon,
-        string? homeName)
+        string? homeName,
+        double visualRangeKm)
     {
         var f    = ef.State;
         var info = ef.Aircraft;
@@ -308,6 +309,7 @@ public sealed class FlightTrackerWorker(
             HomeLat:                   homeLat,
             HomeLon:                   homeLon,
             HomeName:                  homeName,
+            VisualRangeKm:             visualRangeKm,
             Timestamp:                 DateTimeOffset.UtcNow
         );
     }
