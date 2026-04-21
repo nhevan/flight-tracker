@@ -26,9 +26,14 @@ public sealed record FlightSseEvent(
     string? OriginIata,
     string? OriginIcao,
     string? OriginName,
+    double? OriginLat,
+    double? OriginLon,
     string? DestIata,
     string? DestIcao,
     string? DestName,
+    double? DestLat,
+    double? DestLon,
+    double? RouteDistanceKm,
 
     // ── Aircraft identity ─────────────────────────────────────────────────────
     string? AircraftDescription,  // e.g. "Boeing 787-9"
