@@ -69,17 +69,25 @@ var sseJsonOptions = new JsonSerializerOptions
 
 app.MapGet("/flight-tracker/events", async (HttpContext ctx, SseBroadcaster broadcaster) =>
 {
+    // CORS must be set before any early return so the browser can read error responses.
+    ctx.Response.Headers.AccessControlAllowOrigin = "*";
+
     if (!settings.Sse.Enabled)
     {
         ctx.Response.StatusCode = 404;
         return;
     }
 
-    // Bearer token auth
+    // Bearer token auth — accept from ?token= query param (browser SSE) or Authorization header.
     if (!string.IsNullOrEmpty(settings.Sse.BearerToken))
     {
-        if (!ctx.Request.Headers.TryGetValue("Authorization", out var authHeader)
-            || authHeader.ToString() != $"Bearer {settings.Sse.BearerToken}")
+        var queryToken  = ctx.Request.Query["token"].ToString();
+        var headerToken = ctx.Request.Headers.TryGetValue("Authorization", out var authHeader)
+            ? authHeader.ToString().Replace("Bearer ", "").Trim()
+            : null;
+        var provided = !string.IsNullOrEmpty(queryToken) ? queryToken : headerToken;
+
+        if (provided != settings.Sse.BearerToken)
         {
             ctx.Response.StatusCode = 401;
             await ctx.Response.WriteAsync("Unauthorized");
@@ -90,7 +98,6 @@ app.MapGet("/flight-tracker/events", async (HttpContext ctx, SseBroadcaster broa
     ctx.Response.Headers.ContentType = "text/event-stream";
     ctx.Response.Headers.CacheControl = "no-cache";
     ctx.Response.Headers.Connection = "keep-alive";
-    ctx.Response.Headers.AccessControlAllowOrigin = "*";
     // Tell Caddy (and nginx) not to buffer the response
     ctx.Response.Headers["X-Accel-Buffering"] = "no";
 
