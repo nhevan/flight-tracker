@@ -90,6 +90,7 @@ app.MapGet("/flight-tracker/events", async (HttpContext ctx, SseBroadcaster broa
     ctx.Response.Headers.ContentType = "text/event-stream";
     ctx.Response.Headers.CacheControl = "no-cache";
     ctx.Response.Headers.Connection = "keep-alive";
+    ctx.Response.Headers.AccessControlAllowOrigin = "*";
     // Tell Caddy (and nginx) not to buffer the response
     ctx.Response.Headers["X-Accel-Buffering"] = "no";
 
