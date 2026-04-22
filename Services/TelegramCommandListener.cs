@@ -158,9 +158,15 @@ public sealed class TelegramCommandListener : ITelegramCommandListener
                     }
                 }
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 break;
+            }
+            catch (OperationCanceledException ex)
+            {
+                // HttpClient timeout (TaskCanceledException) — not a shutdown, just retry
+                Console.WriteLine($"[TelegramListener] Request timed out ({ex.Message}) — retrying in 5s");
+                try { await Task.Delay(5_000, cancellationToken); } catch { break; }
             }
             catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Conflict)
             {
