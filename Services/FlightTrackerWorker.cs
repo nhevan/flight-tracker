@@ -158,33 +158,13 @@ public sealed class FlightTrackerWorker(
 
                     if (etaSecs is <= 120.0
                         && f.BarometricAltitudeMeters is not null
-                        && f.BarometricAltitudeMeters <= settings.Telegram.MaxAltitudeMeters
-                        && (!alreadyNotified || bearingChanged))
+                        && f.BarometricAltitudeMeters <= settings.Telegram.MaxAltitudeMeters)
                     {
                         string? dir = FlightDirectionHelper.Classify(
                             f.Latitude, f.Longitude, effectiveHeading, f.DistanceKm,
                             homeLat, homeLon);
 
-                        var visitorInfo = bearingChanged
-                            ? null
-                            : await repeatVisitorService.GetVisitorInfoAsync(f.Icao24, stoppingToken);
-
-                        IReadOnlyList<(double Lat, double Lon)>? trajectory = bearingChanged
-                            && positionHistory.TryGetValue(f.Icao24, out var hist)
-                            ? hist
-                            : null;
-
-                        var recordedDots = await trajectoryService.GetRecordedPointsAsync(f.Icao24, stoppingToken);
-
-                        await telegramService.NotifyAsync(ef, dir ?? "Towards", etaSecs, visitorInfo, stoppingToken,
-                            homeLat, homeLon,
-                            previousHeading: bearingChanged ? lastHeading : null,
-                            trajectory: trajectory,
-                            isBeingRecorded: trajectoryService.IsTracking(f.Icao24),
-                            recordedDots: recordedDots.Count > 0 ? recordedDots : null,
-                            isCourseChange: bearingChanged);
-
-                        // Broadcast to SSE clients
+                        // SSE: fire on every qualifying poll for live position updates
                         if (settings.Sse.Enabled && sseBroadcaster.ClientCount > 0)
                         {
                             // Snapshot positionHistory — the live List<T> is mutated on the next poll tick
@@ -196,12 +176,35 @@ public sealed class FlightTrackerWorker(
                                 sseTrajectory, homeLat, homeLon, settings.HomeLocation.Name, settings.HomeLocation.VisualRangeKm));
                         }
 
-                        if (!bearingChanged)
-                            await loggingService.LogAsync(ef, dir ?? "Towards", etaSecs,
-                                homeLat, homeLon, settings.HomeLocation.Name,
-                                DateTimeOffset.UtcNow, stoppingToken);
+                        // Telegram + DB: only on first detection or course change
+                        if (!alreadyNotified || bearingChanged)
+                        {
+                            var visitorInfo = bearingChanged
+                                ? null
+                                : await repeatVisitorService.GetVisitorInfoAsync(f.Icao24, stoppingToken);
 
-                        notifiedIcaos[f.Icao24] = effectiveHeading;
+                            IReadOnlyList<(double Lat, double Lon)>? trajectory = bearingChanged
+                                && positionHistory.TryGetValue(f.Icao24, out var hist)
+                                ? hist
+                                : null;
+
+                            var recordedDots = await trajectoryService.GetRecordedPointsAsync(f.Icao24, stoppingToken);
+
+                            await telegramService.NotifyAsync(ef, dir ?? "Towards", etaSecs, visitorInfo, stoppingToken,
+                                homeLat, homeLon,
+                                previousHeading: bearingChanged ? lastHeading : null,
+                                trajectory: trajectory,
+                                isBeingRecorded: trajectoryService.IsTracking(f.Icao24),
+                                recordedDots: recordedDots.Count > 0 ? recordedDots : null,
+                                isCourseChange: bearingChanged);
+
+                            if (!bearingChanged)
+                                await loggingService.LogAsync(ef, dir ?? "Towards", etaSecs,
+                                    homeLat, homeLon, settings.HomeLocation.Name,
+                                    DateTimeOffset.UtcNow, stoppingToken);
+
+                            notifiedIcaos[f.Icao24] = effectiveHeading;
+                        }
                     }
                 }
 
