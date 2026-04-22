@@ -68,6 +68,10 @@ The JSON body is a single flat object (all keys camelCase). See the schema below
   "speedKmh": 648.0,            // ground speed (m/s × 3.6), nullable
   "headingDegrees": 273.0,      // effective heading (broadcast or GPS-inferred), nullable
   "verticalRateMetersPerSecond": -4.2,  // climb(+)/descent(-), nullable
+  "trajectory": [               // breadcrumb trail — up to 120 recent {lat,lon} positions (oldest first)
+    { "lat": 52.3456, "lon": 4.7890 },
+    { "lat": 52.3460, "lon": 4.7901 }
+  ],                            // empty array when history has not yet accumulated
 
   // Proximity to the configured home location
   "distanceKm": 12.4,           // current distance, nullable

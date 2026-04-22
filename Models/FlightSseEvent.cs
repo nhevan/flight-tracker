@@ -16,6 +16,7 @@ public sealed record FlightSseEvent(
     double? SpeedKmh,
     double? HeadingDegrees,       // effective (broadcast or GPS-inferred)
     double? VerticalRateMetersPerSecond,
+    IReadOnlyList<GeoPoint> Trajectory,  // breadcrumb trail; empty when history not yet accumulated
 
     // ── Proximity ────────────────────────────────────────────────────────────
     double? DistanceKm,

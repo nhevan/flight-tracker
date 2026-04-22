@@ -186,8 +186,15 @@ public sealed class FlightTrackerWorker(
 
                         // Broadcast to SSE clients
                         if (settings.Sse.Enabled && sseBroadcaster.ClientCount > 0)
+                        {
+                            // Snapshot positionHistory — the live List<T> is mutated on the next poll tick
+                            // while the SSE channel reader may still be serializing this event.
+                            var sseTrajectory = positionHistory.TryGetValue(f.Icao24, out var sseHist)
+                                ? sseHist.Select(p => new GeoPoint(p.Lat, p.Lon)).ToList()
+                                : (IReadOnlyList<GeoPoint>)[];
                             sseBroadcaster.Broadcast(BuildSseEvent(ef, dir ?? "Towards", etaSecs, bearingChanged,
-                                homeLat, homeLon, settings.HomeLocation.Name, settings.HomeLocation.VisualRangeKm));
+                                sseTrajectory, homeLat, homeLon, settings.HomeLocation.Name, settings.HomeLocation.VisualRangeKm));
+                        }
 
                         if (!bearingChanged)
                             await loggingService.LogAsync(ef, dir ?? "Towards", etaSecs,
@@ -245,6 +252,7 @@ public sealed class FlightTrackerWorker(
         string direction,
         double? etaSeconds,
         bool isCourseChange,
+        IReadOnlyList<GeoPoint> trajectory,
         double homeLat,
         double homeLon,
         string? homeName,
@@ -273,6 +281,7 @@ public sealed class FlightTrackerWorker(
                                            : null,
             HeadingDegrees:            ef.EffectiveHeading,
             VerticalRateMetersPerSecond: f.VerticalRateMetersPerSecond,
+            Trajectory:                  trajectory,
             DistanceKm:                f.DistanceKm,
             EtaSeconds:                etaSeconds,
             Direction:                 direction,
