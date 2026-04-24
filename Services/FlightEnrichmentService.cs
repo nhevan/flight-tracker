@@ -38,8 +38,10 @@ public sealed class FlightEnrichmentService : IFlightEnrichmentService
         CancellationToken cancellationToken)
     {
         // Route and aircraft info are independent — fetch both in parallel.
-        // Route is keyed by callsign (adsbdb); aircraft info by ICAO24 hex (hexdb).
-        var routeTask    = _routeService.GetRouteAsync(flight.Callsign, cancellationToken);
+        // Route is keyed by callsign (adsb.lol /routeset + adsbdb fallback); aircraft info by ICAO24 hex (hexdb).
+        // Position is passed so adsb.lol can disambiguate schedules sharing a callsign.
+        var routeTask    = _routeService.GetRouteAsync(
+            flight.Callsign, flight.Latitude, flight.Longitude, cancellationToken);
         var aircraftTask = _aircraftInfoService.GetAircraftInfoAsync(flight.Icao24, cancellationToken);
 
         await Task.WhenAll(routeTask, aircraftTask);

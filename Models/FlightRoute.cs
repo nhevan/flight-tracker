@@ -1,8 +1,9 @@
 namespace FlightTracker.Models;
 
 /// <summary>
-/// Origin and destination airports for a flight, sourced from adsbdb.com.
-/// All fields are nullable — adsbdb may not know the route for every callsign.
+/// Origin and destination airports for a flight, resolved by FlightRouteService
+/// (adsb.lol /routeset primary — position-aware; adsbdb.com fallback).
+/// All fields are nullable — neither source may know the route for every callsign.
 /// RouteDistanceKm is the great-circle distance between the two airports (Haversine),
 /// used to compute an approximate total flight time when combined with ground speed.
 /// </summary>

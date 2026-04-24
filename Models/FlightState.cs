@@ -155,6 +155,51 @@ internal sealed class AdsbdbAirport
     public double? Longitude { get; set; }
 }
 
+// Internal: adsb.lol POST /api/0/routeset response.
+// Response is an array; each element corresponds to a submitted callsign.
+// When a route can't be resolved, adsb.lol omits most fields and "_airports" is absent/empty.
+internal sealed class AdsbLolRoute
+{
+    [System.Text.Json.Serialization.JsonPropertyName("callsign")]
+    public string? Callsign { get; set; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("airport_codes")]
+    public string? AirportCodes { get; set; }          // e.g. "KJFK-EGLL" — ICAO-ICAO
+
+    [System.Text.Json.Serialization.JsonPropertyName("_airport_codes_iata")]
+    public string? AirportCodesIata { get; set; }      // e.g. "JFK-LHR"
+
+    [System.Text.Json.Serialization.JsonPropertyName("_airports")]
+    public AdsbLolAirport[]? Airports { get; set; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("plausible")]
+    public bool? Plausible { get; set; }
+}
+
+internal sealed class AdsbLolAirport
+{
+    [System.Text.Json.Serialization.JsonPropertyName("icao")]
+    public string? Icao { get; set; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("iata")]
+    public string? Iata { get; set; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("name")]
+    public string? Name { get; set; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("location")]
+    public string? Location { get; set; }              // municipality / city
+
+    [System.Text.Json.Serialization.JsonPropertyName("countryiso2")]
+    public string? CountryIso2 { get; set; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("lat")]
+    public double? Lat { get; set; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("lon")]
+    public double? Lon { get; set; }
+}
+
 // Internal: root response from hexdb.io /api/v1/aircraft/{hex}
 internal sealed class HexDbAircraftResponse
 {
