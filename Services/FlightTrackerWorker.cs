@@ -55,7 +55,7 @@ public sealed class FlightTrackerWorker(
             StringComparer.OrdinalIgnoreCase);
         var positionHistory = new Dictionary<string, List<(double Lat, double Lon)>>(
             StringComparer.OrdinalIgnoreCase);
-        var notifiedIcaos = new Dictionary<string, double?>(StringComparer.OrdinalIgnoreCase);
+        var trackedIcaos = new Dictionary<string, double?>(StringComparer.OrdinalIgnoreCase);
         while (!stoppingToken.IsCancellationRequested)
         {
             try
@@ -64,7 +64,7 @@ public sealed class FlightTrackerWorker(
                 {
                     settings.HomeLocation.LocationResetRequested = false;
                     previousPositions.Clear();
-                    notifiedIcaos.Clear();
+                    trackedIcaos.Clear();
                     positionHistory.Clear();
                     string locLabel = settings.HomeLocation.Name is { } n ? $"\"{n}\" " : "";
                     Console.WriteLine($"[Spot] Location changed to {locLabel}" +
@@ -153,20 +153,24 @@ public sealed class FlightTrackerWorker(
                         f.Latitude, f.Longitude, effectiveHeading, f.VelocityMetersPerSecond,
                         homeLat, homeLon);
 
-                    bool alreadyNotified = notifiedIcaos.TryGetValue(f.Icao24, out double? lastHeading);
+                    bool alreadyNotified = trackedIcaos.TryGetValue(f.Icao24, out double? lastHeading);
                     bool bearingChanged  = FlightDirectionHelper.HeadingChangedSignificantly(lastHeading, effectiveHeading);
 
                     string? dir = FlightDirectionHelper.Classify(
                         f.Latitude, f.Longitude, effectiveHeading, f.DistanceKm,
                         homeLat, homeLon);
 
-                    // SSE: broadcast every in-range flight under the configured altitude
-                    // ceiling on every poll so the radar can render aircraft that have already
-                    // passed overhead but remain in VisualRangeKm.
+                    // SSE sticky tracking: a flight starts streaming once it crosses the approach
+                    // gate (Telegram criteria), then keeps streaming on every poll until it leaves
+                    // VisualRangeKm — even after it has passed overhead and ETA goes null.
+                    bool isApproachingNow = etaSecs is <= 120.0
+                        && f.BarometricAltitudeMeters is not null
+                        && f.BarometricAltitudeMeters <= settings.Telegram.MaxAltitudeMeters;
+                    bool wasApproaching = trackedIcaos.ContainsKey(f.Icao24);
+
                     if (settings.Sse.Enabled && sseBroadcaster.ClientCount > 0
                         && f.Latitude.HasValue && f.Longitude.HasValue
-                        && f.BarometricAltitudeMeters is not null
-                        && f.BarometricAltitudeMeters <= settings.Telegram.MaxAltitudeMeters)
+                        && (isApproachingNow || wasApproaching))
                     {
                         // Snapshot positionHistory — the live List<T> is mutated on the next poll tick
                         // while the SSE channel reader may still be serializing this event.
@@ -208,14 +212,14 @@ public sealed class FlightTrackerWorker(
                                     homeLat, homeLon, settings.HomeLocation.Name,
                                     DateTimeOffset.UtcNow, stoppingToken);
 
-                            notifiedIcaos[f.Icao24] = effectiveHeading;
+                            trackedIcaos[f.Icao24] = effectiveHeading;
                         }
                     }
                 }
 
-                foreach (var icao in notifiedIcaos.Keys
+                foreach (var icao in trackedIcaos.Keys
                     .Where(icao => !previousPositions.ContainsKey(icao)).ToList())
-                    notifiedIcaos.Remove(icao);
+                    trackedIcaos.Remove(icao);
 
                 if (!Console.IsOutputRedirected)
                     FlightTableRenderer.Render(
