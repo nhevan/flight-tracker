@@ -160,10 +160,13 @@ public sealed class FlightTrackerWorker(
                         f.Latitude, f.Longitude, effectiveHeading, f.DistanceKm,
                         homeLat, homeLon);
 
-                    // SSE: broadcast every in-range flight on every poll so the radar can
-                    // render aircraft that have already passed overhead but remain in VisualRangeKm.
+                    // SSE: broadcast every in-range flight under the configured altitude
+                    // ceiling on every poll so the radar can render aircraft that have already
+                    // passed overhead but remain in VisualRangeKm.
                     if (settings.Sse.Enabled && sseBroadcaster.ClientCount > 0
-                        && f.Latitude.HasValue && f.Longitude.HasValue)
+                        && f.Latitude.HasValue && f.Longitude.HasValue
+                        && f.BarometricAltitudeMeters is not null
+                        && f.BarometricAltitudeMeters <= settings.Telegram.MaxAltitudeMeters)
                     {
                         // Snapshot positionHistory — the live List<T> is mutated on the next poll tick
                         // while the SSE channel reader may still be serializing this event.
