@@ -156,26 +156,28 @@ public sealed class FlightTrackerWorker(
                     bool alreadyNotified = notifiedIcaos.TryGetValue(f.Icao24, out double? lastHeading);
                     bool bearingChanged  = FlightDirectionHelper.HeadingChangedSignificantly(lastHeading, effectiveHeading);
 
+                    string? dir = FlightDirectionHelper.Classify(
+                        f.Latitude, f.Longitude, effectiveHeading, f.DistanceKm,
+                        homeLat, homeLon);
+
+                    // SSE: broadcast every in-range flight on every poll so the radar can
+                    // render aircraft that have already passed overhead but remain in VisualRangeKm.
+                    if (settings.Sse.Enabled && sseBroadcaster.ClientCount > 0
+                        && f.Latitude.HasValue && f.Longitude.HasValue)
+                    {
+                        // Snapshot positionHistory — the live List<T> is mutated on the next poll tick
+                        // while the SSE channel reader may still be serializing this event.
+                        var sseTrajectory = positionHistory.TryGetValue(f.Icao24, out var sseHist)
+                            ? sseHist.Select(p => new GeoPoint(p.Lat, p.Lon)).ToList()
+                            : (IReadOnlyList<GeoPoint>)[];
+                        sseBroadcaster.Broadcast(BuildSseEvent(ef, dir ?? "Crossing", etaSecs, bearingChanged,
+                            sseTrajectory, homeLat, homeLon, settings.HomeLocation.Name, settings.HomeLocation.VisualRangeKm));
+                    }
+
                     if (etaSecs is <= 120.0
                         && f.BarometricAltitudeMeters is not null
                         && f.BarometricAltitudeMeters <= settings.Telegram.MaxAltitudeMeters)
                     {
-                        string? dir = FlightDirectionHelper.Classify(
-                            f.Latitude, f.Longitude, effectiveHeading, f.DistanceKm,
-                            homeLat, homeLon);
-
-                        // SSE: fire on every qualifying poll for live position updates
-                        if (settings.Sse.Enabled && sseBroadcaster.ClientCount > 0)
-                        {
-                            // Snapshot positionHistory — the live List<T> is mutated on the next poll tick
-                            // while the SSE channel reader may still be serializing this event.
-                            var sseTrajectory = positionHistory.TryGetValue(f.Icao24, out var sseHist)
-                                ? sseHist.Select(p => new GeoPoint(p.Lat, p.Lon)).ToList()
-                                : (IReadOnlyList<GeoPoint>)[];
-                            sseBroadcaster.Broadcast(BuildSseEvent(ef, dir ?? "Towards", etaSecs, bearingChanged,
-                                sseTrajectory, homeLat, homeLon, settings.HomeLocation.Name, settings.HomeLocation.VisualRangeKm));
-                        }
-
                         // Telegram + DB: only on first detection or course change
                         if (!alreadyNotified || bearingChanged)
                         {
